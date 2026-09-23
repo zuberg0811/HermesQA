@@ -1,0 +1,35 @@
+services:
+  api:
+    build: .
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
+    env_file: .env
+    ports: ["8000:8000"]
+    volumes:
+      - ./secrets:/app/secrets:ro
+    depends_on: [redis, postgres]
+
+  worker:
+    build: .
+    command: rq worker --url ${REDIS_URL:-redis://redis:6379/0} reviews
+    env_file: .env
+    volumes:
+      - ./secrets:/app/secrets:ro
+      # PHẢI là bind mount cùng đường dẫn ở host và container: worker truyền đường dẫn /data/...
+      # cho docker daemon của HOST khi spawn sandbox, nên named volume sẽ không hoạt động.
+      - /data:/data
+      - /var/run/docker.sock:/var/run/docker.sock   # để worker spawn sandbox
+    depends_on: [redis, postgres]
+
+  redis:
+    image: redis:7-alpine
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: hermesqa
+      POSTGRES_PASSWORD: hermesqa
+      POSTGRES_DB: hermesqa
+    volumes: [pgdata:/var/lib/postgresql/data]
+
+volumes:
+  pgdata:

@@ -1,0 +1,13 @@
+# Đặt ở gốc repo được review với tên .hermesqa.yml
+language: auto              # python | node | go | java | auto
+roles: [SE, QA, DevOps]
+ignore:
+  - "**/migrations/**"
+  - "**/*.min.js"
+  - "docs/**"
+conventions: |
+  - snake_case cho hàm, PascalCase cho class.
+  - Mọi endpoint FastAPI phải có response_model.
+  - Không dùng print(), dùng logging.
+max_comments: 12
+block_on_critical: true

@@ -1,0 +1,12 @@
+.env
+secrets/
+__pycache__/
+*.pyc
+data/
+.venv/
+.pytest_cache/
+# eval: repo dataset và kết quả chạy đều sinh lại được bằng eval/make_dataset.py
+eval/dataset-repo/
+eval/out/
+eval/dataset-repo-multi/
+eval/out-multi/

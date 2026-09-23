@@ -1,0 +1,258 @@
+{
+ "repo": "eval/dataset-repo-multi",
+ "cases": {
+  "js-xss-innerhtml": {
+   "branch": "case/js-xss-innerhtml",
+   "lang": "javascript",
+   "truth": [
+    {
+     "file": "web/src/api.js",
+     "line": 18,
+     "categories": [
+      "security"
+     ],
+     "note": "XSS: gan innerHTML bang du lieu nguoi dung"
+    }
+   ]
+  },
+  "js-xss-dangerously": {
+   "branch": "case/js-xss-dangerously",
+   "lang": "react",
+   "truth": [
+    {
+     "file": "web/src/UserCard.jsx",
+     "line": 8,
+     "categories": [
+      "security"
+     ],
+     "note": "XSS qua dangerouslySetInnerHTML"
+    }
+   ]
+  },
+  "js-eval": {
+   "branch": "case/js-eval",
+   "lang": "javascript",
+   "truth": [
+    {
+     "file": "web/src/api.js",
+     "line": 18,
+     "categories": [
+      "security"
+     ],
+     "note": "eval() tren chuoi dau vao"
+    }
+   ]
+  },
+  "js-secret": {
+   "branch": "case/js-secret",
+   "lang": "javascript",
+   "truth": [
+    {
+     "file": "web/src/api.js",
+     "line": 2,
+     "categories": [
+      "security"
+     ],
+     "note": "Stripe secret key hard-code trong code frontend"
+    }
+   ]
+  },
+  "js-loose-eq": {
+   "branch": "case/js-loose-eq",
+   "lang": "javascript",
+   "truth": [
+    {
+     "file": "web/src/api.js",
+     "line": 18,
+     "categories": [
+      "bug"
+     ],
+     "note": "So sanh long: chuoi '1' cung thanh admin"
+    }
+   ]
+  },
+  "react-missing-key": {
+   "branch": "case/react-missing-key",
+   "lang": "react",
+   "truth": [
+    {
+     "file": "web/src/UserCard.jsx",
+     "line": 11,
+     "categories": [
+      "bug",
+      "style"
+     ],
+     "note": "Thieu prop key trong danh sach render"
+    }
+   ]
+  },
+  "js-concat-loop": {
+   "branch": "case/js-concat-loop",
+   "lang": "javascript",
+   "truth": [
+    {
+     "file": "web/src/api.js",
+     "line": 20,
+     "categories": [
+      "performance"
+     ],
+     "note": "Noi chuoi trong vong lap O(n^2)"
+    }
+   ]
+  },
+  "ts-any-escape": {
+   "branch": "case/ts-any-escape",
+   "lang": "typescript",
+   "truth": [
+    {
+     "file": "web/src/utils.ts",
+     "line": 10,
+     "categories": [
+      "bug"
+     ],
+     "note": "Ep kieu any bo qua type check, crash khi profile undefined"
+    }
+   ]
+  },
+  "ts-missing-await": {
+   "branch": "case/ts-missing-await",
+   "lang": "typescript",
+   "truth": [
+    {
+     "file": "web/src/utils.ts",
+     "line": 16,
+     "categories": [
+      "bug"
+     ],
+     "note": "Thieu await: ep Promise thanh Record"
+    }
+   ]
+  },
+  "ts-weak-assert": {
+   "branch": "case/ts-weak-assert",
+   "lang": "typescript",
+   "truth": [
+    {
+     "file": "web/src/utils.test.ts",
+     "line": 6,
+     "categories": [
+      "test"
+     ],
+     "note": "Assertion yeu: khong kiem tra gia tri"
+    }
+   ]
+  },
+  "ts-skip-test": {
+   "branch": "case/ts-skip-test",
+   "lang": "typescript",
+   "truth": [
+    {
+     "file": "web/src/utils.test.ts",
+     "line": 9,
+     "categories": [
+      "test"
+     ],
+     "note": "Skip test khong co ly do"
+    }
+   ]
+  },
+  "go-sqli": {
+   "branch": "case/go-sqli",
+   "lang": "go",
+   "truth": [
+    {
+     "file": "server/db.go",
+     "line": 17,
+     "categories": [
+      "security"
+     ],
+     "note": "SQL injection do noi chuoi"
+    }
+   ]
+  },
+  "go-err-ignored": {
+   "branch": "case/go-err-ignored",
+   "lang": "go",
+   "truth": [
+    {
+     "file": "server/handler.go",
+     "line": 15,
+     "categories": [
+      "bug"
+     ],
+     "note": "Nuot loi encode, client nhan response hong"
+    }
+   ]
+  },
+  "go-nil-deref": {
+   "branch": "case/go-nil-deref",
+   "lang": "go",
+   "truth": [
+    {
+     "file": "server/handler.go",
+     "line": 22,
+     "categories": [
+      "bug"
+     ],
+     "note": "Nil pointer dereference khi id khong ton tai"
+    }
+   ]
+  },
+  "go-no-test": {
+   "branch": "case/go-no-test",
+   "lang": "go",
+   "truth": [
+    {
+     "file": "server/handler.go",
+     "line": 20,
+     "categories": [
+      "test"
+     ],
+     "note": "Ham moi nhieu nhanh logic, khong co test"
+    }
+   ]
+  },
+  "java-sqli": {
+   "branch": "case/java-sqli",
+   "lang": "java",
+   "truth": [
+    {
+     "file": "service/UserService.java",
+     "line": 14,
+     "categories": [
+      "security"
+     ],
+     "note": "SQL injection do noi chuoi"
+    }
+   ]
+  },
+  "java-md5": {
+   "branch": "case/java-md5",
+   "lang": "java",
+   "truth": [
+    {
+     "file": "service/UserService.java",
+     "line": 19,
+     "categories": [
+      "security"
+     ],
+     "note": "MD5 cho mat khau"
+    }
+   ]
+  },
+  "java-resource-leak": {
+   "branch": "case/java-resource-leak",
+   "lang": "java",
+   "truth": [
+    {
+     "file": "service/UserService.java",
+     "line": 19,
+     "categories": [
+      "bug"
+     ],
+     "note": "Ro ri tai nguyen: reader khong duoc dong"
+    }
+   ]
+  }
+ }
+}

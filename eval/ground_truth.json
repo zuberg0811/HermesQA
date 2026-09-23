@@ -1,0 +1,483 @@
+{
+ "repo": "eval/dataset-repo",
+ "cases": {
+  "sqli-concat": {
+   "branch": "case/sqli-concat",
+   "truth": [
+    {
+     "file": "app/db.py",
+     "line": 11,
+     "categories": [
+      "security"
+     ],
+     "note": "SQL injection qua string concat"
+    }
+   ]
+  },
+  "sqli-fstring": {
+   "branch": "case/sqli-fstring",
+   "truth": [
+    {
+     "file": "app/db.py",
+     "line": 17,
+     "categories": [
+      "security"
+     ],
+     "note": "SQL injection qua f-string"
+    }
+   ]
+  },
+  "cmd-shell-true": {
+   "branch": "case/cmd-shell-true",
+   "truth": [
+    {
+     "file": "app/utils.py",
+     "line": 17,
+     "categories": [
+      "security"
+     ],
+     "note": "Command injection: shell=True với input"
+    }
+   ]
+  },
+  "cmd-os-system": {
+   "branch": "case/cmd-os-system",
+   "truth": [
+    {
+     "file": "app/api.py",
+     "line": 11,
+     "categories": [
+      "security"
+     ],
+     "note": "Command injection qua os.system"
+    }
+   ]
+  },
+  "secret-aws": {
+   "branch": "case/secret-aws",
+   "truth": [
+    {
+     "file": "app/utils.py",
+     "line": 6,
+     "categories": [
+      "security"
+     ],
+     "note": "AWS key hard-code"
+    },
+    {
+     "file": "app/utils.py",
+     "line": 7,
+     "categories": [
+      "security"
+     ],
+     "note": "AWS secret hard-code"
+    }
+   ]
+  },
+  "secret-stripe": {
+   "branch": "case/secret-stripe",
+   "truth": [
+    {
+     "file": "app/api.py",
+     "line": 8,
+     "categories": [
+      "security"
+     ],
+     "note": "Stripe key hard-code"
+    }
+   ]
+  },
+  "eval-input": {
+   "branch": "case/eval-input",
+   "truth": [
+    {
+     "file": "app/utils.py",
+     "line": 16,
+     "categories": [
+      "security"
+     ],
+     "note": "eval() trên input người dùng"
+    }
+   ]
+  },
+  "yaml-unsafe-load": {
+   "branch": "case/yaml-unsafe-load",
+   "truth": [
+    {
+     "file": "app/utils.py",
+     "line": 17,
+     "categories": [
+      "security"
+     ],
+     "note": "yaml.load không SafeLoader"
+    }
+   ]
+  },
+  "pickle-load": {
+   "branch": "case/pickle-load",
+   "truth": [
+    {
+     "file": "app/api.py",
+     "line": 11,
+     "categories": [
+      "security"
+     ],
+     "note": "pickle.loads trên dữ liệu không tin cậy"
+    }
+   ]
+  },
+  "md5-password": {
+   "branch": "case/md5-password",
+   "truth": [
+    {
+     "file": "app/utils.py",
+     "line": 8,
+     "categories": [
+      "security"
+     ],
+     "note": "MD5 hash mật khẩu, bỏ salt"
+    }
+   ]
+  },
+  "requests-verify-false": {
+   "branch": "case/requests-verify-false",
+   "truth": [
+    {
+     "file": "app/api.py",
+     "line": 12,
+     "categories": [
+      "security"
+     ],
+     "note": "Tắt kiểm tra TLS certificate"
+    }
+   ]
+  },
+  "flask-debug": {
+   "branch": "case/flask-debug",
+   "truth": [
+    {
+     "file": "app/api.py",
+     "line": 12,
+     "categories": [
+      "security"
+     ],
+     "note": "Flask debug mode mở trên 0.0.0.0"
+    }
+   ]
+  },
+  "docker-latest": {
+   "branch": "case/docker-latest",
+   "truth": [
+    {
+     "file": "Dockerfile",
+     "line": 1,
+     "categories": [
+      "devops",
+      "security"
+     ],
+     "note": "Không pin version base image"
+    }
+   ]
+  },
+  "docker-no-user-shell-cmd": {
+   "branch": "case/docker-no-user-shell-cmd",
+   "truth": [
+    {
+     "file": "Dockerfile",
+     "line": 6,
+     "categories": [
+      "devops",
+      "security"
+     ],
+     "note": "Chạy root + CMD shell form"
+    }
+   ]
+  },
+  "docker-copy-everything": {
+   "branch": "case/docker-copy-everything",
+   "truth": [
+    {
+     "file": "Dockerfile",
+     "line": 5,
+     "categories": [
+      "devops",
+      "security"
+     ],
+     "note": "COPY toàn bộ context (kèm secrets/.git)"
+    }
+   ]
+  },
+  "docker-apt-no-clean": {
+   "branch": "case/docker-apt-no-clean",
+   "truth": [
+    {
+     "file": "Dockerfile",
+     "line": 3,
+     "categories": [
+      "devops",
+      "security"
+     ],
+     "note": "apt-get không update/không clean/không -y"
+    }
+   ]
+  },
+  "docker-root-user": {
+   "branch": "case/docker-root-user",
+   "truth": [
+    {
+     "file": "Dockerfile",
+     "line": 6,
+     "categories": [
+      "devops",
+      "security"
+     ],
+     "note": "Chạy container bằng root"
+    }
+   ]
+  },
+  "docker-add-not-copy": {
+   "branch": "case/docker-add-not-copy",
+   "truth": [
+    {
+     "file": "Dockerfile",
+     "line": 5,
+     "categories": [
+      "devops",
+      "security"
+     ],
+     "note": "Dùng ADD thay vì COPY"
+    }
+   ]
+  },
+  "reqs-unpinned": {
+   "branch": "case/reqs-unpinned",
+   "truth": [
+    {
+     "file": "requirements.txt",
+     "line": 1,
+     "categories": [
+      "devops",
+      "security",
+      "maintainability"
+     ],
+     "note": "Bỏ pin version dependency"
+    }
+   ]
+  },
+  "docker-sudo": {
+   "branch": "case/docker-sudo",
+   "truth": [
+    {
+     "file": "Dockerfile",
+     "line": 4,
+     "categories": [
+      "devops",
+      "security"
+     ],
+     "note": "Dùng sudo trong Dockerfile"
+    }
+   ]
+  },
+  "mutable-default-arg": {
+   "branch": "case/mutable-default-arg",
+   "truth": [
+    {
+     "file": "app/utils.py",
+     "line": 15,
+     "categories": [
+      "bug"
+     ],
+     "note": "Mutable default argument"
+    }
+   ]
+  },
+  "bare-except": {
+   "branch": "case/bare-except",
+   "truth": [
+    {
+     "file": "app/utils.py",
+     "line": 18,
+     "categories": [
+      "bug",
+      "style"
+     ],
+     "note": "Bare except nuốt mọi lỗi (kể cả KeyboardInterrupt)"
+    }
+   ]
+  },
+  "off-by-one": {
+   "branch": "case/off-by-one",
+   "truth": [
+    {
+     "file": "app/utils.py",
+     "line": 12,
+     "categories": [
+      "bug"
+     ],
+     "note": "Off-by-one: mất phần tử cuối"
+    }
+   ]
+  },
+  "eq-none": {
+   "branch": "case/eq-none",
+   "truth": [
+    {
+     "file": "app/api.py",
+     "line": 12,
+     "categories": [
+      "bug",
+      "style"
+     ],
+     "note": "So sánh None bằng == thay vì is"
+    }
+   ]
+  },
+  "div-no-zero-check": {
+   "branch": "case/div-no-zero-check",
+   "truth": [
+    {
+     "file": "app/utils.py",
+     "line": 16,
+     "categories": [
+      "bug"
+     ],
+     "note": "ZeroDivisionError khi list rỗng"
+    }
+   ]
+  },
+  "truthy-or-bug": {
+   "branch": "case/truthy-or-bug",
+   "truth": [
+    {
+     "file": "app/api.py",
+     "line": 20,
+     "categories": [
+      "bug"
+     ],
+     "note": "Điều kiện luôn True: x == \"a\" or \"b\""
+    }
+   ]
+  },
+  "undefined-name": {
+   "branch": "case/undefined-name",
+   "truth": [
+    {
+     "file": "app/api.py",
+     "line": 20,
+     "categories": [
+      "bug",
+      "style"
+     ],
+     "note": "Biến chưa định nghĩa (NameError)"
+    }
+   ]
+  },
+  "skip-test": {
+   "branch": "case/skip-test",
+   "truth": [
+    {
+     "file": "tests/test_utils.py",
+     "line": 10,
+     "categories": [
+      "test"
+     ],
+     "note": "Skip test không có lý do chính đáng"
+    }
+   ]
+  },
+  "weak-assert": {
+   "branch": "case/weak-assert",
+   "truth": [
+    {
+     "file": "tests/test_utils.py",
+     "line": 5,
+     "categories": [
+      "test"
+     ],
+     "note": "Assertion yếu: không kiểm tra giá trị"
+    }
+   ]
+  },
+  "new-func-no-test": {
+   "branch": "case/new-func-no-test",
+   "truth": [
+    {
+     "file": "app/utils.py",
+     "line": 15,
+     "categories": [
+      "test"
+     ],
+     "note": "Hàm mới nhiều nhánh logic, không có test"
+    }
+   ]
+  },
+  "removed-assert": {
+   "branch": "case/removed-assert",
+   "truth": [
+    {
+     "file": "tests/test_utils.py",
+     "line": 17,
+     "categories": [
+      "test"
+     ],
+     "note": "Test mất assertion, chỉ còn gọi hàm"
+    }
+   ]
+  },
+  "string-concat-loop": {
+   "branch": "case/string-concat-loop",
+   "truth": [
+    {
+     "file": "app/utils.py",
+     "line": 18,
+     "categories": [
+      "performance"
+     ],
+     "note": "Nối chuỗi trong vòng lặp O(n^2)"
+    }
+   ]
+  },
+  "unused-import": {
+   "branch": "case/unused-import",
+   "truth": [
+    {
+     "file": "app/api.py",
+     "line": 1,
+     "categories": [
+      "style",
+      "maintainability"
+     ],
+     "note": "Import không dùng"
+    }
+   ]
+  },
+  "print-not-logging": {
+   "branch": "case/print-not-logging",
+   "truth": [
+    {
+     "file": "app/api.py",
+     "line": 11,
+     "categories": [
+      "style",
+      "maintainability"
+     ],
+     "note": "print() thay vì logging"
+    }
+   ]
+  },
+  "duplicate-helper": {
+   "branch": "case/duplicate-helper",
+   "truth": [
+    {
+     "file": "app/utils.py",
+     "line": 15,
+     "categories": [
+      "style",
+      "maintainability"
+     ],
+     "note": "Trùng lặp logic với chunk()"
+    }
+   ]
+  }
+ }
+}
