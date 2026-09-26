@@ -13,7 +13,7 @@ import tempfile
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 
 from app.config import settings
-from app.review import postprocess, report
+from app.review import postprocess, report, static_tools
 from app.review.agent import get_backend, build_user_prompt, self_verify
 from app.review.diff_utils import parse_diff, file_context
 from app.review.router import select_roles
@@ -49,10 +49,16 @@ def main():
     changed = {f.path for f in files}
 
     static = []
+    tools = None
     if not a.skip_static:
         out_dir = tempfile.mkdtemp(prefix="hqa-out-")
         run_static_analysis(a.repo, out_dir, targets=sorted(changed))
-        static = [f for f in collect_static(out_dir) if f.file in changed]
+        all_static = collect_static(out_dir)
+        static = [f for f in all_static if f.file in changed]
+        tools = static_tools.tool_status(out_dir, all_static)
+        for name, st in tools.items():
+            if st["state"] == "failed":
+                log.error("cong cu static THAT BAI: %s (ket qua thieu phan cua no)", name)
     static_summary = "\n".join(f"- {f.file}:{f.line} [{f.severity}] {f.title}: {f.explanation[:120]}" for f in static[:40])
 
     roles = [r for r in a.roles.split(",") if r.strip()] if a.roles is not None else select_roles(files, cfg.roles)
@@ -80,7 +86,7 @@ def main():
 
     all_f = postprocess.dedupe(static + llm)
     inline, overflow = postprocess.apply_policy(all_f, files, settings.min_confidence, settings.min_severity_to_comment, cfg.max_comments or settings.max_comments_per_pr)
-    md = report.build_markdown(pr_meta, roles, summaries, inline + overflow, settings.llm_model)
+    md = report.build_markdown(pr_meta, roles, summaries, inline + overflow, settings.llm_model, tools)
     open(a.out, "w", encoding="utf-8").write(md)
     if a.json:
         json.dump([f.model_dump() for f in inline + overflow], open(a.json, "w", encoding="utf-8"), ensure_ascii=False, indent=1)

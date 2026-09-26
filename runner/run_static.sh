@@ -6,6 +6,14 @@ set -u
 OUT=/out
 mkdir -p "$OUT"
 
+# Cong cu that bai phai KEU TO. Du an nay da dinh 4 lan bug "cong cu chay ma
+# khong bao gi" vi loi bi 2>/dev/null nuot mat.
+warn() {
+  echo "[runner] LOI: $1 that bai" >&2
+  [ -s "$2" ] && sed 's/^/[runner]   /' "$2" >&2
+  echo "$1" >> "$OUT/failed_tools.txt"
+}
+
 TARGETS_FILE="$OUT/targets.txt"
 PY_TARGETS=()
 DOCKER_TARGETS=()
@@ -61,16 +69,16 @@ else
 fi
 
 echo "[runner] semgrep (${#ALL_TARGETS[@]} target, rules: ${SEMGREP_ARGS[*]})"
-semgrep scan "${SEMGREP_ARGS[@]}" --json --quiet --metrics=off -o "$OUT/semgrep.json" "${ALL_TARGETS[@]}" 2>/dev/null || echo '{"results":[]}' > "$OUT/semgrep.json"
+semgrep scan "${SEMGREP_ARGS[@]}" --json --quiet --metrics=off -o "$OUT/semgrep.json" "${ALL_TARGETS[@]}" 2>"$OUT/semgrep.err"   || { warn semgrep "$OUT/semgrep.err"; echo '{"results":[]}' > "$OUT/semgrep.json"; }
 
 echo "[runner] bandit"
 if [ ${#PY_TARGETS[@]} -gt 0 ]; then
-  bandit -r -f json -o "$OUT/bandit.json" -q "${PY_TARGETS[@]}" 2>/dev/null || true
+  bandit -r -f json -o "$OUT/bandit.json" -q "${PY_TARGETS[@]}" 2>"$OUT/bandit.err" || true
 fi
 [ -s "$OUT/bandit.json" ] || echo '{"results":[]}' > "$OUT/bandit.json"
 
 echo "[runner] gitleaks"
-gitleaks detect --source /src --no-git --report-format json --report-path "$OUT/gitleaks.json" --exit-code 0 >/dev/null 2>&1 || echo '[]' > "$OUT/gitleaks.json"
+gitleaks detect --source /src --no-git --report-format json --report-path "$OUT/gitleaks.json" --exit-code 0 >/dev/null 2>"$OUT/gitleaks.err"   || { warn gitleaks "$OUT/gitleaks.err"; echo '[]' > "$OUT/gitleaks.json"; }
 
 echo "[runner] hadolint"
 : > "$OUT/hadolint.json"
@@ -81,8 +89,15 @@ done
 
 echo "[runner] ruff"
 if [ ${#PY_TARGETS[@]} -gt 0 ]; then
-  ruff check "${PY_TARGETS[@]}" --output-format json --exit-zero > "$OUT/ruff.json" 2>/dev/null || echo '[]' > "$OUT/ruff.json"
+  # --no-cache BAT BUOC: /src mount read-only, ruff ghi .ruff_cache vao do se chet
+  # ngay truoc khi phan tich dong nao. Truoc day loi nay bi nuot nen ruff chua
+  # tung tra ve mot finding nao.
+  if ! ruff check "${PY_TARGETS[@]}" --output-format json --exit-zero --no-cache        > "$OUT/ruff.json" 2>"$OUT/ruff.err"; then
+    warn ruff "$OUT/ruff.err"
+    echo '[]' > "$OUT/ruff.json"
+  fi
 else
   echo '[]' > "$OUT/ruff.json"
 fi
+[ -s "$OUT/ruff.json" ] || echo '[]' > "$OUT/ruff.json"
 echo "[runner] done"

@@ -6,6 +6,11 @@ from app.review.schemas import Finding, SEVERITY_RANK
 TEMPLATE = Template("""# HermesQA Review Report — PR #{{ pr.pr_number }}: {{ pr.title }}
 
 **Repo:** {{ pr.owner }}/{{ pr.repo }} · **Commit:** `{{ pr.head_sha[:8] }}` · **Vai đã chạy:** {{ roles | join(", ") }}
+{% if tools %}
+**Static tools:** {% for t, st in tools.items() %}{% if st.state == "ok" %}{{ t }} ✓ {{ st.findings }}{% elif st.state == "failed" %}**{{ t }} ✗ THẤT BẠI**{% else %}{{ t }} – không áp dụng{% endif %}{% if not loop.last %} · {% endif %}{% endfor %}
+{% if tools.values() | selectattr("state", "equalto", "failed") | list %}
+> ⚠️ Có công cụ static thất bại — kết quả dưới đây **thiếu** phần của công cụ đó, không phải "không có vấn đề".
+{% endif %}{% endif %}
 
 ## Tổng quan
 {% for r, s in summaries.items() %}- **{{ r }}:** {{ s }}
@@ -31,10 +36,11 @@ _Tạo bởi HermesQA · static tools: semgrep, bandit, gitleaks, hadolint, ruff
 """)
 
 
-def build_markdown(pr: dict, roles: list[str], summaries: dict, findings: list[Finding], model: str) -> str:
+def build_markdown(pr: dict, roles: list[str], summaries: dict, findings: list[Finding], model: str,
+                   tools: dict | None = None) -> str:
     findings = sorted(findings, key=lambda f: (-SEVERITY_RANK[f.severity], f.file, f.line))
     return TEMPLATE.render(pr=pr, roles=roles, summaries=summaries, findings=findings,
-                           counts=Counter(f.severity for f in findings), model=model)
+                           counts=Counter(f.severity for f in findings), model=model, tools=tools)
 
 
 def build_pr_summary(summaries: dict, inline: list[Finding], overflow: list[Finding], report_url: str | None) -> str:

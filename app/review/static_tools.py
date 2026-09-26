@@ -9,6 +9,59 @@ BANDIT_SEV = {"HIGH": "high", "MEDIUM": "medium", "LOW": "low"}
 BANDIT_CONF = {"HIGH": 0.9, "MEDIUM": 0.7, "LOW": 0.5}
 
 
+# Ruff tron ca loi dung-sai lan loi hinh thuc trong cung mot dinh dang. Gan cung
+# category="style" cho tat ca khien F821 (dung bien chua dinh nghia -> crash) bi
+# xep ngang voi "thua mot dau cach", va lam buoc dedupe khong gop duoc voi LLM
+# (LLM goi day la "bug").
+_RUFF_BUG = {
+    "F821": "high",    # bien chua dinh nghia -> NameError luc chay
+    "F632": "high",    # dung "is" de so sanh literal
+    "F811": "medium",  # dinh nghia de len chinh no
+    "E711": "medium",  # so sanh None bang ==
+    "E712": "medium",  # so sanh True/False bang ==
+    "E713": "medium", "E714": "medium",
+    "E722": "medium",  # bare except
+    "B006": "medium",  # mutable default argument
+    "B008": "medium",
+}
+
+
+def _ruff_meta(code: str) -> tuple[str, str]:
+    """(category, severity) theo ma luat ruff."""
+    sev = _RUFF_BUG.get(code)
+    return ("bug", sev) if sev else ("style", "low")
+
+
+STATIC_TOOLS = ("semgrep", "bandit", "gitleaks", "hadolint", "ruff")
+
+
+def tool_status(out_dir: str, findings: list[Finding]) -> dict[str, dict]:
+    """Trang thai tung cong cu: chay duoc / that bai / khong co gi de quet.
+
+    Bug "cong cu chay ma khong bao gi" da xay ra 4 lan trong du an nay (semgrep,
+    bandit, self-verify, ruff). Mot lan chay hong truoc day trong Y HET mot lan
+    chay sach. Ham nay lam cho hai truong hop do phan biet duoc.
+    """
+    failed = set()
+    fpath = os.path.join(out_dir, "failed_tools.txt")
+    if os.path.exists(fpath):
+        with open(fpath, encoding="utf-8", errors="replace") as f:
+            failed = {ln.strip() for ln in f if ln.strip()}
+    counts: dict[str, int] = {}
+    for f in findings:
+        counts[f.source] = counts.get(f.source, 0) + 1
+    out = {}
+    for t in STATIC_TOOLS:
+        if t in failed:
+            state = "failed"
+        elif not os.path.exists(os.path.join(out_dir, f"{t}.json")):
+            state = "missing"
+        else:
+            state = "ok"
+        out[t] = {"state": state, "findings": counts.get(t, 0)}
+    return out
+
+
 def _load(path: str, default):
     try:
         with open(path) as f:
@@ -64,8 +117,9 @@ def collect(out_dir: str) -> list[Finding]:
         pass
 
     for r in _load(os.path.join(out_dir, "ruff.json"), []):
+        cat, sev = _ruff_meta(r.get("code") or "")
         findings.append(Finding(
-            file=_rel(r["filename"]), line=r["location"]["row"], severity="low", category="style",
+            file=_rel(r["filename"]), line=r["location"]["row"], severity=sev, category=cat,
             title=r["code"], explanation=r["message"], suggested_fix=(r.get("fix") or {}).get("message", "") or "",
             confidence=0.9, role="static:ruff", source="ruff"))
 

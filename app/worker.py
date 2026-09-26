@@ -8,7 +8,7 @@ import yaml
 from app.config import settings
 from app.github_app import GitHubClient
 from app.memory import init_db, save_run, get_repo_memory
-from app.review import postprocess, report
+from app.review import postprocess, report, static_tools
 from app.review.agent import get_backend, build_user_prompt, self_verify
 from app.review.diff_utils import parse_diff, file_context
 from app.review.router import select_roles
@@ -65,7 +65,12 @@ def review_pull_request(job: dict):
 
         # 3. Static analysis trong sandbox (chỉ giữ finding ở file thay đổi)
         run_static_analysis(repo_dir, out_dir, targets=sorted(changed_paths))
-        static = [f for f in collect_static(out_dir) if f.file in changed_paths]
+        all_static = collect_static(out_dir)
+        static = [f for f in all_static if f.file in changed_paths]
+        tools = static_tools.tool_status(out_dir, all_static)
+        for name, st in tools.items():
+            if st["state"] == "failed":
+                log.error("cong cu static THAT BAI: %s (ket qua thieu phan cua no)", name)
         static_summary = "\n".join(f"- {f.file}:{f.line} [{f.severity}] {f.title}: {f.explanation[:120]}" for f in static[:40])
 
         # 4. Agent theo từng vai
@@ -96,7 +101,7 @@ def review_pull_request(job: dict):
 
         # 6. Report
         os.makedirs(settings.report_dir, exist_ok=True)
-        md = report.build_markdown(pr_meta, roles, summaries, inline + overflow, settings.llm_model)
+        md = report.build_markdown(pr_meta, roles, summaries, inline + overflow, settings.llm_model, tools)
         report_path = os.path.join(settings.report_dir, f"{owner}_{repo}_pr{pr}_{sha[:8]}.md")
         with open(report_path, "w", encoding="utf-8") as fh:
             fh.write(md)
