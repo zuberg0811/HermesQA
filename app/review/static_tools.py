@@ -34,6 +34,30 @@ def _ruff_meta(code: str) -> tuple[str, str]:
 
 STATIC_TOOLS = ("semgrep", "bandit", "gitleaks", "hadolint", "ruff")
 
+# Luat static tool duoc coi la NHIEU khi bao trong file test. Hien chi co mot:
+# bandit B101 "assert_used" — assert trong test la cach viet chuan cua pytest,
+# chinh tai lieu bandit khuyen bo B101 cho test code. Tren bo eval, B101 chiem
+# 11/26 FP cua cau hinh static (khong case nao la loi that).
+# Luat o day phai la best practice duoc tai lieu cong cu ghi nhan, KHONG duoc
+# them luat chi vi no lam diem eval dep hon.
+_NOISE_IN_TESTS: dict[str, set[str]] = {"bandit": {"B101"}}
+
+
+def is_test_path(path: str) -> bool:
+    parts = path.replace("\\", "/").split("/")
+    base = parts[-1]
+    return (any(d in ("test", "tests") for d in parts[:-1])
+            or base.startswith("test_") or base.endswith("_test.py"))
+
+
+def is_noise(f: Finding) -> bool:
+    """Finding thuoc luat nhieu-trong-test (xem _NOISE_IN_TESTS)."""
+    rules = _NOISE_IN_TESTS.get(f.source)
+    if not rules or not is_test_path(f.file):
+        return False
+    rule_id = f.title.split(":", 1)[0].strip()
+    return rule_id in rules
+
 
 def tool_status(out_dir: str, findings: list[Finding]) -> dict[str, dict]:
     """Trang thai tung cong cu: chay duoc / that bai / khong co gi de quet.

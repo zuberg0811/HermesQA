@@ -63,7 +63,12 @@ def main():
     if gt is None:
         raise SystemExit("Chưa có ground_truth.json — chạy make_dataset.py trước")
 
-    configs = [d for d in ("static", "llm", "both") if os.path.isdir(os.path.join(a.out, d))]
+    # Tu phat hien moi config da chay (static, llm, both, llm_noverify, ...):
+    # moi thu muc con co file findings .json la mot config.
+    known = ["static", "llm", "both", "llm_noverify"]
+    found = sorted(d for d in os.listdir(a.out) if os.path.isdir(os.path.join(a.out, d))
+                   and any(n.endswith(".json") for n in os.listdir(os.path.join(a.out, d))))
+    configs = [d for d in known if d in found] + [d for d in found if d not in known]
     if not configs:
         raise SystemExit("Chưa có kết quả nào trong eval/out — chạy run_eval.py trước")
 

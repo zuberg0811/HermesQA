@@ -10,3 +10,6 @@ eval/dataset-repo/
 eval/out/
 eval/dataset-repo-multi/
 eval/out-multi/
+eval/out-v2/
+eval/out-multi-v2/
+eval/out-noise/

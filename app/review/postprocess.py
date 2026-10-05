@@ -4,14 +4,70 @@ from app.review.diff_utils import ChangedFile, commentable_line
 
 SEV_EMOJI = {"critical": "🚨", "high": "🔴", "medium": "🟠", "low": "🟡"}
 
+# Hai finding cách nhau <= DEDUPE_LINE_TOL dòng trong cùng file được coi là cùng vị trí.
+DEDUPE_LINE_TOL = 2
+
+
+def _is_llm(f: Finding) -> bool:
+    return f.source == "llm"
+
+
+def _same_spot(a: Finding, b: Finding) -> bool:
+    return a.file == b.file and abs(a.line - b.line) <= DEDUPE_LINE_TOL
+
+
+def _is_duplicate(kept: Finding, new: Finding) -> bool:
+    """Quy tắc gộp `new` vào `kept` (kept luôn đứng trước theo thứ tự sort: static trước LLM).
+
+    - Cùng nguồn (static-static, LLM-LLM): phải cùng category. Hai vai LLM (SE, QA)
+      cố ý báo hai khía cạnh khác nhau của cùng đoạn code (bug + thiếu test) —
+      gộp theo vị trí sẽ mất lỗi thật (đo được: mất 2 TP trên bộ Python).
+    - Khác nguồn (static tool vs LLM): cùng vị trí là đủ, VỚI điều kiện finding
+      LLM không nghiêm trọng hơn finding static. Lý do gộp: hai bên dùng hai
+      taxonomy khác nhau cho cùng một lỗi (ruff E711 gọi là "bug", LLM gọi là
+      "maintainability"), và LLM đã được dặn KHÔNG lặp lại lỗi static nên thứ nó
+      báo thêm ngay tại đó thường là nhận xét phụ về cùng đoạn code. Đòi cùng
+      category làm bước gộp gần như vô hiệu (FP của `both` ~ tổng FP hai nguồn).
+      Lý do có điều kiện severity: LLM tự chấm severity và hay thổi phồng; nếu
+      nó cho rằng chỗ đó có lỗi nặng hơn thứ static thấy (semgrep "medium" cạnh
+      nil-deref "critical"), đó là hai lỗi khác nhau — giữ cả hai. Nhờ vậy
+      `conclusion()` (chỉ nhìn finding chính) không bao giờ bỏ sót critical.
+    """
+    if not _same_spot(kept, new):
+        return False
+    if kept.category == new.category:
+        return True
+    if _is_llm(kept) == _is_llm(new):
+        return False
+    return SEVERITY_RANK[new.severity] <= SEVERITY_RANK[kept.severity]
+
+
+def _attach(primary: Finding, other: Finding) -> None:
+    """Đính finding bị gộp vào finding chính để comment không mất thông tin."""
+    note = " ".join(other.explanation.split())
+    if len(note) > 300:
+        note = note[:297] + "..."
+    sep = chr(10) * 2
+    primary.explanation = f"{primary.explanation.rstrip()}{sep}_Cùng vị trí ({other.role}): **{other.title}** — {note}_"
+
 
 def dedupe(findings: list[Finding]) -> list[Finding]:
-    """Trùng file+dòng(±2)+category -> giữ cái có severity/confidence cao hơn (ưu tiên static tool)."""
+    """Gộp finding trùng vị trí (xem `_is_duplicate`), giữ 1 finding chính mỗi cụm.
+
+    Finding chính là cái đứng trước theo thứ tự: static tool trước LLM (mô tả
+    tất định, không bịa), rồi severity, rồi confidence. Cùng category mà hai
+    bên cùng thấy thì severity của cụm lấy mức cao nhất — không hạ mức.
+    Finding bị gộp được đính vào explanation của finding chính.
+    """
     kept: list[Finding] = []
-    for f in sorted(findings, key=lambda x: (x.source == "llm", -SEVERITY_RANK[x.severity], -x.confidence)):
-        dup = any(k.file == f.file and abs(k.line - f.line) <= 2 and k.category == f.category for k in kept)
-        if not dup:
+    for f in sorted(findings, key=lambda x: (_is_llm(x), -SEVERITY_RANK[x.severity], -x.confidence)):
+        k = next((k for k in kept if _is_duplicate(k, f)), None)
+        if k is None:
             kept.append(f)
+            continue
+        if k.category == f.category and SEVERITY_RANK[f.severity] > SEVERITY_RANK[k.severity]:
+            k.severity = f.severity
+        _attach(k, f)
     return kept
 
 

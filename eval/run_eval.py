@@ -26,6 +26,11 @@ CONFIG_FLAGS = {
     "static": ["--roles", ""],
     "llm": ["--skip-static"],
     "both": [],
+    # Ablation: LLM nhung TAT buoc self-verify. So voi "llm" de do xem buoc tu
+    # kiem chung co that su loc bo finding sai hay khong. Self-verify hien dung
+    # CHINH model va CHINH vai da sinh ra finding, nen can do chu khong nen mac
+    # dinh tin la no hoat dong.
+    "llm_noverify": ["--skip-static", "--no-verify"],
 }
 
 TOKEN_RE = re.compile(r"tokens in=(\d+) out=(\d+)")
@@ -94,7 +99,7 @@ def main():
     configs = [c.strip() for c in a.configs.split(",") if c.strip()]
     for cfg in configs:
         if cfg not in CONFIG_FLAGS:
-            raise SystemExit(f"config không hợp lệ: {cfg} (chọn static|llm|both)")
+            raise SystemExit(f"config không hợp lệ: {cfg} (chọn {"|".join(CONFIG_FLAGS)})")
 
     for cfg in configs:
         out_dir = os.path.join(a.out, cfg)

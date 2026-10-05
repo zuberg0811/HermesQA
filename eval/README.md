@@ -1,7 +1,8 @@
 # Eval HermesQA
 
-Bộ đánh giá cho đồ án: đo precision/recall/F1, thời gian và token của 3 cấu hình
-(chỉ static, chỉ LLM, kết hợp) trên 35 PR có lỗi biết trước.
+Bộ đánh giá cho đồ án: đo precision/recall/F1, thời gian và token của các cấu hình
+(chỉ static, chỉ LLM, kết hợp, LLM tắt self-verify) trên 35 PR Python có lỗi biết trước,
+cộng thêm bộ đa ngôn ngữ 18 PR (JS/TS/Java/Go).
 
 ## Thành phần
 - `make_dataset.py` — sinh repo `eval/dataset-repo` (nhánh `main` sạch + 35 nhánh `case/<id>`,
@@ -9,8 +10,14 @@ Bộ đánh giá cho đồ án: đo precision/recall/F1, thời gian và token c
   Phân bố: 12 security, 8 devops, 7 bug, 4 test, 4 style/performance.
 - `run_eval.py` — checkout từng nhánh case, chạy `app.cli` theo từng cấu hình,
   lưu findings + thời gian + token vào `eval/out/`. Chạy lại sẽ tự bỏ qua case đã xong (resume).
+- `make_dataset_multi.py` / `ground_truth_multi.json` — bộ đa ngôn ngữ (18 case) trong
+  `eval/dataset-repo-multi`. Chạy eval/score với `--truth eval/ground_truth_multi.json --out eval/out-multi`.
 - `score.py` — khớp findings với ground truth (cùng file, line ±3, đúng category),
-  in bảng tổng hợp và ghi `eval/out/results.md`.
+  in bảng tổng hợp và ghi `<out>/results.md`. Tự phát hiện mọi config có trong thư mục out.
+- `rescore.py` — áp lại bước hậu xử lý HIỆN TẠI (lọc nhiễu static + `postprocess.dedupe`)
+  lên findings đã lưu, ghi ra thư mục khác để chấm. Dùng khi chỉ sửa hậu xử lý, không
+  muốn tốn quota LLM chạy lại. Giới hạn: với `both`, prompt LLM đã nhìn thấy tóm tắt static
+  cũ; rescore không đổi phần LLM đã sinh.
 
 ## Chạy
 ```bash
@@ -24,7 +31,20 @@ python eval/run_eval.py --configs llm,both     # cần LLM_API_KEY thật trong 
 
 # 3. Chấm điểm
 python eval/score.py                           # -> eval/out/results.md
+
+# 4. (tuỳ chọn) Ablation self-verify và chấm lại sau khi sửa hậu xử lý
+python eval/run_eval.py --configs llm_noverify
+python eval/rescore.py --src eval/out --dst eval/out-v2
+python eval/score.py --out eval/out-v2
 ```
+
+## Các thư mục kết quả
+| Thư mục | Nội dung |
+|---|---|
+| `eval/out` | Bộ Python, 4 config (`static`, `llm`, `both`, `llm_noverify`), output thô của pipeline lúc chạy |
+| `eval/out-v2` | `eval/out` sau khi rescore bằng hậu xử lý hiện tại (dedupe nhận biết nguồn + lọc B101) |
+| `eval/out-multi` / `eval/out-multi-v2` | Bộ đa ngôn ngữ, thô / rescore |
+| `eval/out-noise` | Lần chạy `llm` thứ hai y hệt cấu hình, để đo dao động giữa hai lần chạy LLM |
 
 ## Ghi chú phương pháp
 - `run_eval.py` đặt `MIN_SEVERITY_TO_COMMENT=low` và `MIN_CONFIDENCE=0.0` cho tiến trình con

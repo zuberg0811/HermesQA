@@ -11,6 +11,7 @@ import subprocess
 import tempfile
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
+log = logging.getLogger("hermesqa.cli")
 
 from app.config import settings
 from app.review import postprocess, report, static_tools

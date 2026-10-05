@@ -1,6 +1,6 @@
 # Báo cáo tiến độ đồ án: HermesQA — Bot AI tự động review Pull Request
 
-**Cập nhật:** 18/09/2026 · **Trạng thái:** Hệ thống chạy được đầu-cuối, đang chạy thực nghiệm đánh giá
+**Cập nhật:** 05/10/2026 · **Trạng thái:** Hệ thống chạy đầu-cuối; thực nghiệm đã chạy đủ 2 bộ dữ liệu (Python 35 case, đa ngôn ngữ 18 case) + ablation self-verify; bước hợp nhất static/LLM đã sửa theo kết quả đo
 
 ---
 
@@ -100,7 +100,7 @@ LLM khi review code thường mắc ba lỗi: bịa ra vấn đề không tồn 
 1. **Ràng buộc đầu vào**: prompt đưa kèm số dòng thật của từng dòng code, và yêu cầu rõ "chỉ báo dòng nằm trong diff, không bịa dòng".
 2. **Self-verify**: kết quả của vòng 1 được đưa lại cho LLM với vai trò "reviewer cấp cao kiểm chứng", yêu cầu loại bỏ finding không thật sự là vấn đề và hiệu chỉnh số dòng lệch.
 3. **Ràng buộc kỹ thuật khi map dòng**: `commentable_line()` chỉ chấp nhận dòng nằm trong diff; nếu lệch ≤ 3 dòng thì "snap" về dòng gần nhất, lệch hơn thì finding bị chuyển sang phần phụ lục thay vì comment inline.
-4. **Dedupe ưu tiên static tool**: khi LLM và static tool cùng báo một vị trí (lệch ≤ 2 dòng, cùng category), giữ kết quả của static tool vì độ tin cậy cao hơn.
+4. **Gộp kết quả nhận biết nguồn (dedupe)**: hai finding cách nhau ≤ 2 dòng trong cùng file được coi là cùng vị trí. Giữa static tool và LLM, cùng vị trí là đủ để gộp (hai bên dùng hai taxonomy khác nhau cho cùng một lỗi: ruff gọi `== None` là *bug*, LLM gọi là *maintainability*), **với điều kiện** finding LLM không nghiêm trọng hơn finding static; nếu LLM cho rằng chỗ đó có lỗi nặng hơn (semgrep *medium* cạnh nil-deref *critical*) thì đó là hai lỗi khác nhau, giữ cả hai. Giữa hai vai LLM với nhau vẫn đòi cùng category, vì SE báo *bug* và QA báo *thiếu test* cho cùng hàm là hai nhận xét khác nhau. Finding chính là static tool (mô tả tất định); finding bị gộp được **đính kèm vào comment** chứ không vứt bỏ, và severity của cụm lấy mức cao nhất. Quy tắc này là kết quả của thực nghiệm (mục 7.4): bản đầu đòi cùng category giữa mọi nguồn nên gần như không gộp được gì.
 
 Ngoài ra còn **confidence gate** (mặc định ≥ 0,6) và **giới hạn số comment** (mặc định 15) để tránh làm nhiễu PR.
 
@@ -131,6 +131,8 @@ Phần này minh chứng cho việc hệ thống đã thực sự được chạ
 | B3 | Ghi file JSON lỗi trên Windows | Thiếu `encoding="utf-8"`, mặc định cp1252 không mã hóa được tiếng Việt | Chỉ định encoding tường minh |
 | B4 | Một vai lỗi làm hỏng cả lần review | `cli.py` không bắt exception theo vai như `worker.py` | Bắt lỗi từng vai, vẫn xuất báo cáo phần còn lại, trả exit code 2 |
 | B5 | Gặp lỗi 429/503 của LLM là hỏng luôn | Không có retry | Bật `max_retries=5` (backoff lũy thừa) |
+| B6 | Ruff chưa từng chạy được trong sandbox | Ruff ghi cache vào `/src` đang mount read-only rồi thoát lỗi; lỗi bị nuốt | Tắt cache; thêm `failed_tools.txt` + `tool_status()` để report phân biệt "không có lỗi" với "công cụ chết"; thêm integration test chạy container thật |
+| B7 | `cli.py` gọi `log.error` khi một static tool thất bại nhưng chưa khai báo `log` | Đúng lúc cần báo lỗi thì chính dòng báo lỗi crash bằng `NameError` — cùng lớp bug "công cụ im lặng" | Khai báo logger; phát hiện khi rà code để sửa bước dedupe |
 
 ### Nhóm C — Tối ưu hiệu năng
 **Vấn đề:** mỗi lần quét static mất ~350 giây. Hai nguyên nhân:
@@ -150,6 +152,15 @@ Phần này minh chứng cho việc hệ thống đã thực sự được chạ
 
 → **Nhanh gấp ~3 lần, kết quả phát hiện không đổi** (đã kiểm chứng bằng cách so sánh finding trước/sau).
 
+### Nhóm D — Sửa theo kết quả thực nghiệm (05/10)
+
+| # | Vấn đề đo được | Nguyên nhân | Cách sửa |
+|---|---|---|---|
+| D1 | FP của cấu hình `both` (61) **lớn hơn** tổng FP hai nguồn (26 + 27): bước gộp không gộp được gì | Dedupe đòi *cùng category* giữa mọi nguồn, trong khi static và LLM đặt tên loại lỗi khác nhau; LLM bị dặn "không lặp lại static" nên báo thêm nhận xét phụ ngay cạnh đó (19/35 FP LLM nằm trong ±2 dòng của một finding static) | Quy tắc gộp nhận biết nguồn (mục 4, điểm 4). Thử bản "gộp theo vị trí bất kể nguồn" trước: mất 2 TP vì gộp nhầm hai vai LLM; thử bản "finding nghiêm trọng hơn làm chính": LLM tự chấm *high* cho "thiếu unit test" đè lên finding static đúng, mất 3 TP. Bản cuối không đổi nhãn, không giấu finding nặng hơn |
+| D2 | 11/26 FP của `static` là bandit **B101 `assert_used`** trong `tests/` | `assert` là cách viết chuẩn của pytest; tài liệu bandit khuyến nghị bỏ B101 cho test code | Bộ lọc nhiễu `is_noise()` trong `static_tools.py`, có bảng luật tường minh. Nguyên tắc: chỉ thêm luật là best practice được tài liệu công cụ ghi nhận, không thêm luật vì nó làm đẹp điểm eval |
+
+Hai thay đổi này chỉ chạm bước hậu xử lý nên được kiểm chứng bằng `eval/rescore.py`: lấy findings thô đã lưu, chạy qua hậu xử lý mới, chấm lại (static tools tất định; phần LLM không sinh lại). Có **5 unit test** mới cho các quy tắc trên.
+
 ---
 
 ## 6. Thiết kế thực nghiệm đánh giá
@@ -168,12 +179,15 @@ Vì không có bộ dữ liệu chuẩn cho bài toán này, đồ án **tự si
 
 **Điểm mạnh về phương pháp:** ground truth (file, số dòng, loại lỗi) được **tính tự động** từ nội dung file thay vì gõ tay, nên số dòng luôn chính xác kể cả khi nội dung file thay đổi.
 
-### 6.2 Ba cấu hình so sánh
+**Bộ thứ hai — đa ngôn ngữ (18 case):** để kiểm tra kết quả có đứng vững khi rời Python/Dockerfile không, `make_dataset_multi.py` sinh một repo riêng gồm frontend JS/JSX/TS (XSS qua innerHTML và dangerouslySetInnerHTML, `eval`, secret, so sánh lỏng `==`, thiếu `key` trong React, thiếu `await`, assertion yếu, skip test), Go (SQL injection, bỏ qua `err`, nil dereference, thiếu test) và Java (SQL injection, MD5, resource leak). Phân bố: 7 security, 7 bug, 3 test, 1 performance.
+
+### 6.2 Các cấu hình so sánh
 | Cấu hình | Mô tả | Mục đích |
 |---|---|---|
 | `static` | Chỉ 5 công cụ static | Đường cơ sở (baseline) |
 | `llm` | Chỉ LLM 3 vai | Đo năng lực riêng của LLM |
 | `both` | Kết hợp (mặc định của sản phẩm) | Kiểm chứng giả thuyết "kết hợp tốt hơn từng phần" |
+| `llm_noverify` | Chỉ LLM, **tắt** self-verify | Ablation: đo self-verify có thật sự lọc bớt finding sai không |
 
 ### 6.3 Tiêu chí chấm điểm
 Một phát hiện được tính **đúng (True Positive)** khi khớp với một lỗi ground truth chưa được khớp trước đó, thỏa đồng thời:
@@ -191,54 +205,74 @@ Mỗi ground truth chỉ được khớp một lần, nên việc báo trùng b�
 
 ## 7. Kết quả hiện có
 
-Thực nghiệm đã chạy **đầy đủ 35 case × 3 cấu hình = 105 lượt chạy, không có lượt nào thất bại**.
+Thực nghiệm đã chạy **đủ 35 case × 4 cấu hình** trên bộ Python và **18 case × 3 cấu hình** trên bộ đa ngôn ngữ, không lượt nào thất bại. Ngoài ra chạy lại `llm` một lần nữa y hệt cấu hình để đo dao động.
 
-| Cấu hình | Số case | TP | FP | FN | Precision | Recall | F1 | Thời gian/PR | Token/PR |
-|---|---|---|---|---|---|---|---|---|---|
-| `static` | 35/35 | 19 | 26 | 17 | 42,2 % | 52,8 % | 46,9 % | 125,6 s | 0 |
-| `llm` | 35/35 | 34 | 27 | 2 | **55,7 %** | **94,4 %** | **70,1 %** | **13,3 s** | 7.229 |
-| `both` | 35/35 | 34 | 54 | 2 | 38,6 % | 94,4 % | 54,8 % | 144,1 s | 7.461 |
+### 7.1 Bộ Python — số liệu thô lúc chạy (sau khi sửa ruff, trước khi sửa bước gộp)
 
-Tổng số lỗi ground truth: 36. Chi tiết từng case: `eval/out/results.md`.
+| Cấu hình | TP | FP | FN | Precision | Recall | F1 | Thời gian/PR | Token/PR |
+|---|---|---|---|---|---|---|---|---|
+| `static` | 23 | 26 | 13 | 46,9 % | 63,9 % | 54,1 % | 101,4 s | 0 |
+| `llm` | 34 | 27 | 2 | 55,7 % | 94,4 % | **70,1 %** | **13,3 s** | 7.229 |
+| `both` | 35 | 61 | 1 | 36,5 % | **97,2 %** | 53,0 % | 119,2 s | 7.552 |
+| `llm_noverify` | 34 | 28 | 2 | 54,8 % | 94,4 % | 69,4 % | 7,0 s | 3.324 |
+| `llm` chạy lần 2 | 33 | 26 | 3 | 55,9 % | 91,7 % | 69,5 % | 19,9 s | 7.163 |
 
-**Khả năng phát hiện theo nhóm lỗi (bắt được / tổng):**
+Tổng ground truth: 36 lỗi. Chi tiết từng case: `eval/out/results.md`.
+
+### 7.2 Bộ Python — sau khi sửa bước gộp và lọc nhiễu (D1, D2), chấm lại bằng `rescore.py`
+
+| Cấu hình | TP | FP | FN | Precision | Recall | F1 | So với 7.1 |
+|---|---|---|---|---|---|---|---|
+| `static` | 23 | 15 | 13 | 60,5 % | 63,9 % | 62,2 % | F1 +8,1 điểm (bỏ 11 FP B101) |
+| `llm` | 34 | 27 | 2 | 55,7 % | 94,4 % | 70,1 % | không đổi |
+| `both` | 35 | 34 | 1 | 50,7 % | **97,2 %** | 66,7 % | F1 +13,7 điểm, FP 61 → 34, **không mất TP nào** |
+
+**Khả năng phát hiện theo nhóm lỗi (bắt được / tổng), sau 7.2:**
 
 | Nhóm | `static` | `llm` | `both` |
 |---|---|---|---|
 | security | 12/13 | 12/13 | 12/13 |
 | devops | 6/8 | 8/8 | 8/8 |
-| bug | 1/7 | 6/7 | 6/7 |
+| bug | 4/7 | 6/7 | 7/7 |
 | test | 0/4 | 4/4 | 4/4 |
-| style | 0/3 | 3/3 | 3/3 |
+| style | 1/3 | 3/3 | 3/3 |
 | performance | 0/1 | 1/1 | 1/1 |
 
-### 7.1 Nhận định
+### 7.3 Bộ đa ngôn ngữ (18 case, JS/TS/Go/Java)
 
-**1. Giả thuyết "kết hợp tốt hơn từng phần" KHÔNG được số liệu ủng hộ.**
-Cấu hình `both` có recall **bằng đúng** `llm` (94,4 %) nhưng precision tụt từ 55,7 % xuống 38,6 %, kéo F1 từ 70,1 % xuống 54,8 %. Kiểm chứng trực tiếp trên tập phát hiện cho thấy **tập lỗi mà static bắt được là tập con thực sự của tập lỗi mà LLM bắt được**: static không đóng góp một phát hiện đúng nào mà LLM bỏ sót (0/19), trong khi thêm vào 27 dương tính giả và khoảng 130 giây mỗi PR. Số FP của `both` (54) xấp xỉ tổng FP của hai cấu hình thành phần (26 + 27), nghĩa là bước khử trùng lặp hiện tại **gần như không gộp được** phát hiện giữa hai nguồn.
+| Cấu hình | TP | FP | FN | Precision | Recall | F1 | Thời gian/PR | Token/PR |
+|---|---|---|---|---|---|---|---|---|
+| `static` | 6 | 1 | 12 | 85,7 % | 33,3 % | 48,0 % | 89,9 s | 0 |
+| `llm` | 18 | 13 | 0 | 58,1 % | 100 % | **73,5 %** | 33,6 s | 8.336 |
+| `both` (thô) | 18 | 16 | 0 | 52,9 % | 100 % | 69,2 % | 96,2 s | 8.570 |
+| `both` (sau D1) | 18 | 14 | 0 | 56,2 % | 100 % | 72,0 % | – | – |
 
-**2. LLM vượt static ở mọi nhóm lỗi, không riêng nhóm "khó định nghĩa mẫu".**
-Dự đoán ban đầu cho rằng static mạnh ở security/devops còn LLM mạnh ở test/style. Thực tế LLM **bằng hoặc hơn** static ở cả sáu nhóm: ngang ở security (12/13), hơn ở devops (8/8 so với 6/8), và bỏ xa ở bug (6/7 so với 1/7), test (4/4 so với 0/4), style (3/3 so với 0/3), performance (1/1 so với 0/1). Recall tổng của static chỉ đạt 52,8 %.
+Static chỉ bắt được 6/18 (toàn bộ là security: SQLi, eval, secret, MD5) vì bộ rule semgrep nạp sẵn cho JS/Go/Java thưa hơn Python, và không có công cụ tương đương bandit/ruff cho các ngôn ngữ này. LLM bắt 18/18.
 
-**3. Static chậm hơn LLM khoảng 10 lần.**
-125,6 s/PR so với 13,3 s/PR. Chi phí này đến từ việc khởi tạo container sandbox và chạy tuần tự 5 công cụ, chứ không phải từ khối lượng phân tích.
+### 7.4 Nhận định
 
-**4. Precision của cả ba cấu hình đều thấp** (38–56 %). Cần đọc kèm lưu ý ở mục 6.3: ngưỡng lọc được nới hết cỡ (`MIN_SEVERITY=low`, `MIN_CONFIDENCE=0`) và mọi phát hiện nằm ngoài ground truth đều bị tính là dương tính giả, kể cả khi phát hiện đó hợp lệ. Đây là **cận dưới** của precision, không phải precision của sản phẩm khi bật chính sách lọc mặc định.
+**1. Giả thuyết "kết hợp tốt hơn từng phần" chỉ đúng một nửa.** `both` có recall cao nhất trên cả hai bộ (97,2 % và 100 %), nhưng F1 vẫn thấp hơn `llm` thuần 1,5–3,4 điểm vì precision thấp hơn. Trước khi sửa D1/D2, khoảng cách là 17 điểm và FP của `both` **lớn hơn tổng FP hai nguồn** — tức bước gộp không hoạt động. Sau khi sửa, FP của `both` (34) đã **nhỏ hơn tổng** (15 + 27 = 42): bước gộp có tác dụng thật, không phải cộng gộp thô nữa.
 
-**5. Hai lỗi không cấu hình nào bắt được:**
-- `eq-none` (so sánh `None` bằng `==` thay vì `is`) — lỗi thật, cả ba cấu hình đều bỏ sót.
-- `secret-aws` dòng 7 — **thực chất là hạn chế của phép đo, không phải lỗi phát hiện**. Case này có 2 ground truth ở dòng 6 và 7 (access key và secret key), nhưng cả static lẫn LLM đều báo **một** phát hiện duy nhất ở dòng 6 bao trùm cả cặp. Do quy tắc chấm mỗi ground truth chỉ khớp tối đa một phát hiện, dòng 7 bị tính là bỏ sót. Recall thực tế vì vậy **cao hơn** con số báo cáo một chút.
+**2. Static không còn là tập con của LLM.** Nhận định trước đây (static không đóng góp phát hiện nào LLM bỏ sót) dựa trên số liệu khi ruff chưa chạy được. Sau khi sửa ruff, static bắt được `eq-none` (so sánh `None` bằng `==`) mà LLM bỏ sót trong cả hai lần chạy, và bắt `undefined-name`, `bare-except`, `mutable-default-arg` tất định. Đó là lý do `both` đạt bug 7/7 trong khi `llm` chỉ 6/7.
 
-### 7.2 Hệ quả cho thiết kế sản phẩm
+**3. Phần FP còn lại của `both` chủ yếu là "đúng nhưng ngoài ground truth".** Rà 34 FP sau D1/D2: 5 lần `dockerfile-source-not-pinned` (semgrep, base image không ghim digest), 3 lần "thiếu HEALTHCHECK", 5 lần "thiếu đóng kết nối database" (base code của dataset thật sự không đóng kết nối), ~10 lần "thiếu unit test cho hàm X". Đây là nhận xét hợp lệ về mặt kỹ thuật nhưng không phải lỗi được tiêm, nên precision báo cáo là **cận dưới** (mục 6.3).
 
-Với dataset này, cấu hình mặc định `both` **không phải lựa chọn tốt nhất**: nó đắt hơn, chậm hơn 10 lần và có F1 thấp hơn `llm` thuần. Hai hướng xử lý:
-- Nếu ưu tiên F1 và tốc độ: dùng `llm` làm mặc định.
-- Nếu vẫn muốn giữ static (vì lý do kiểm toán, hoặc vì tin rằng nó bền vững hơn LLM trên dự án thật): cần **cải thiện bước khử trùng lặp và lọc** để static không bơm thêm FP, thay vì cộng gộp thô như hiện tại.
+**4. Self-verify chưa chứng minh được lợi ích.** Bật/tắt self-verify chênh 0,7 điểm F1 (70,1 so với 69,4), **bằng** mức dao động giữa hai lần chạy `llm` y hệt (70,1 so với 69,5), trong khi tốn gấp đôi token (7.229 so với 3.324) và gấp đôi thời gian. Nguyên nhân có thể: self-verify dùng chính model và chính vai đã sinh finding, nên ít khi "đổi ý". Đây là kết quả âm đáng báo cáo, và là hướng mở: dùng model khác hoặc vai khác để kiểm chứng.
 
-Cần nhấn mạnh: kết luận này gắn với **dataset lỗi tiêm nhân tạo cỡ 35 case**, nơi lỗi tương đối rõ ràng và nằm trong diff nhỏ — điều kiện thuận lợi cho LLM. Trên codebase thật với diff lớn và ngữ cảnh phức tạp, cán cân có thể khác (xem mục 9).
+**5. Static chậm hơn LLM 3–10 lần** (101 s so với 13 s trên Python; 90 s so với 34 s trên đa ngôn ngữ) do khởi tạo container và chạy tuần tự 5 công cụ, không phải do khối lượng phân tích.
 
-### Kiểm thử đơn vị
-`pytest`: **4/4 test pass** — bao gồm parse diff, chọn vai, dedupe/policy, và test hồi quy cho lỗi A5.
+**6. Hai lỗi không cấu hình nào bắt được:** `secret-aws` dòng 7 (artifact của cách chấm: một finding bao trùm cặp access key/secret key ở dòng 6–7, mỗi ground truth chỉ khớp một finding) và, với `llm`, `eq-none`.
+
+### 7.5 Hệ quả cho thiết kế sản phẩm
+
+- Nếu tối ưu F1 và tốc độ: `llm` thuần vẫn nhỉnh hơn trên dataset này.
+- Nếu ưu tiên **không bỏ sót** (recall) và cần kết quả **tất định, kiểm toán được** cho quy trình CI: `both` sau D1/D2 là lựa chọn hợp lý, với chi phí là ~7 FP thêm trên 35 PR và 100 s/PR cho sandbox. Phần FP này gần như toàn bộ là nhận xét hợp lệ ngoài ground truth.
+- Self-verify nên là tuỳ chọn tắt mặc định cho đến khi có bằng chứng, vì tốn gấp đôi token mà không đo được lợi ích.
+
+Kết luận gắn với **dataset lỗi tiêm nhân tạo, diff nhỏ** — điều kiện thuận lợi cho LLM. Trên diff lớn, LLM dễ bỏ sót còn static không phụ thuộc độ dài (mục 9).
+
+### Kiểm thử
+`pytest`: **8/8 unit test pass** (parse diff, router, 4 test cho quy tắc dedupe, lọc nhiễu bandit, hồi quy self-verify) · **8 integration test** chạy container thật, tự bỏ qua khi không có Docker.
 
 ---
 
@@ -250,9 +284,11 @@ Cần nhấn mạnh: kết luận này gắn với **dataset lỗi tiêm nhân t
 | Sandbox static analysis (5 công cụ) | ✅ Đã chạy và kiểm chứng |
 | Agent 3 vai + self-verify | ✅ Đã chạy đầu-cuối với Google Gemini |
 | CLI chạy offline | ✅ Hoàn thành |
-| Bộ thực nghiệm (dataset + chấm điểm) | ✅ Hoàn thành |
-| Kiểm thử đơn vị | ✅ 4/4 pass |
-| **Chạy thực nghiệm đầy đủ** | ✅ **Hoàn thành — 105/105 lượt chạy thành công** |
+| Bộ thực nghiệm (dataset + chấm điểm) | ✅ Hoàn thành — bộ Python 35 case + bộ đa ngôn ngữ 18 case |
+| Kiểm thử đơn vị / tích hợp | ✅ 8/8 unit pass; 8 integration test (cần Docker) |
+| **Chạy thực nghiệm đầy đủ** | ✅ **Hoàn thành — 35×4 + 18×3 + 35 (lần 2) = 229 lượt, không lượt nào thất bại** |
+| Sửa bước hợp nhất static/LLM theo kết quả đo | ✅ Xong 05/10 (D1, D2), kiểm chứng offline bằng `rescore.py` |
+| Chạy lại `both` thật với hậu xử lý mới | ⏳ Chưa — cần Docker + quota LLM; số liệu 7.2 là rescore offline |
 | Triển khai GitHub App thật | ⏳ Chưa — cần đăng ký GitHub App và tunnel công khai |
 | Viết báo cáo/luận văn | 🔄 Đang viết — đã có đủ số liệu thực nghiệm |
 
@@ -263,12 +299,13 @@ Cần nhấn mạnh: kết luận này gắn với **dataset lỗi tiêm nhân t
 ### Hạn chế hiện tại (nên chủ động nêu khi bảo vệ)
 1. **Dataset là lỗi tiêm nhân tạo**, không phải PR thật từ dự án mở. Lỗi tiêm thường "sạch" và dễ nhận ra hơn lỗi thực tế, nên kết quả có thể lạc quan hơn thực tế.
 2. **Cỡ mẫu 35 case** đủ để so sánh xu hướng nhưng chưa đủ để kết luận có ý nghĩa thống kê.
-3. **Chỉ đánh giá trên Python và Dockerfile**; chưa kiểm chứng với JavaScript, Java, Go.
+3. **Bộ đa ngôn ngữ còn nhỏ (18 case)** và static tools cho JS/Go/Java chỉ có semgrep, nên so sánh static/LLM ở đó nghiêng về LLM.
 4. **Phụ thuộc vào một nhà cung cấp LLM**; kết quả có thể khác khi đổi model. (Kiến trúc đã tách qua `AgentBackend` protocol nên đổi model không phải sửa logic.)
 5. **Bộ nhớ repo chưa có vòng phản hồi tự động**: hiện phải nhập tay, chưa học từ phản ứng 👍/👎 của lập trình viên.
 6. **Chưa đo chi phí thực tế bằng tiền** trên quy mô lớn.
-7. **Bước khử trùng lặp giữa static và LLM chưa hiệu quả**: số dương tính giả của cấu hình `both` gần bằng tổng của hai cấu hình thành phần, cho thấy hệ thống đang cộng gộp thay vì hợp nhất. Đây là hạn chế do chính thực nghiệm chỉ ra (mục 7.1) và là việc cần sửa trước tiên.
-8. **Cách chấm điểm phạt oan trường hợp một phát hiện bao trùm nhiều ground truth liền nhau** (xem case `secret-aws`, mục 7.1), làm recall báo cáo thấp hơn thực tế.
+7. **Số liệu `both` sau khi sửa bước gộp (mục 7.2) là chấm lại offline**, không phải chạy lại: phần LLM vẫn là output sinh ra khi prompt còn chứa tóm tắt static cũ (có B101). Cần một lần chạy lại thật để xác nhận.
+8. **Cách chấm điểm phạt oan trường hợp một phát hiện bao trùm nhiều ground truth liền nhau** (xem case `secret-aws`, mục 7.4), làm recall báo cáo thấp hơn thực tế.
+9. **Self-verify dùng chính model đã sinh finding** nên chưa đo được lợi ích (mục 7.4, điểm 4).
 
 ### Hướng phát triển
 - Hỗ trợ GitLab/Bitbucket; suggestion block (cho phép nhấn "Apply" ngay trên GitHub).
@@ -280,8 +317,11 @@ Cần nhấn mạnh: kết luận này gắn với **dataset lỗi tiêm nhân t
 
 ## 10. Dự kiến câu hỏi phản biện và hướng trả lời
 
-**H: Thực nghiệm cho thấy `both` kém hơn `llm`. Vậy phần static analysis có còn ý nghĩa không?**
-Đ: Đây là kết quả **ngược với giả thuyết ban đầu** và em báo cáo đúng như đo được. Trên dataset này, tập lỗi static bắt được là tập con của tập LLM bắt được, nên static không thêm phát hiện đúng nào mà chỉ thêm dương tính giả. Tuy nhiên có ba điểm cần nói rõ. (1) Kết luận gắn với **lỗi tiêm nhân tạo, diff nhỏ** — điều kiện rất thuận lợi cho LLM; trên diff lớn hàng nghìn dòng, LLM dễ bỏ sót hơn còn static thì không phụ thuộc độ dài. (2) Static **tất định và có thể kiểm toán**: cùng đầu vào luôn cho cùng đầu ra, điều mà LLM không đảm bảo — đây là yêu cầu bắt buộc ở nhiều quy trình CI. (3) Vấn đề thực sự nằm ở **bước hợp nhất kết quả**, không phải ở bản thân static: FP của `both` xấp xỉ tổng FP hai nguồn, chứng tỏ dedupe đang cộng gộp thô. Hướng sửa là lọc theo độ tin cậy và gộp phát hiện trùng vị trí, thay vì bỏ static.
+**H: Thực nghiệm cho thấy `both` kém hơn `llm` về F1. Vậy phần static analysis có còn ý nghĩa không?**
+Đ: Em báo cáo đúng như đo được: F1 của `both` thấp hơn `llm` 1,5–3,4 điểm. Nhưng có bốn điểm. (1) `both` có **recall cao nhất** trên cả hai bộ, và static bắt được lỗi LLM bỏ sót trong cả hai lần chạy (`eq-none`), nên static không phải tập con của LLM. (2) Khoảng cách ban đầu là 17 điểm, do bước gộp đòi cùng category nên không gộp được gì — thực nghiệm chỉ ra lỗi này và em đã sửa, sau đó FP của `both` nhỏ hơn tổng FP hai nguồn. (3) Phần FP còn lại chủ yếu là nhận xét hợp lệ ngoài ground truth (base image không ghim digest, thiếu đóng kết nối). (4) Static **tất định và kiểm toán được** — cùng đầu vào luôn cho cùng đầu ra, trong khi hai lần chạy `llm` y hệt đã lệch nhau 1 TP; đây là yêu cầu bắt buộc ở nhiều quy trình CI. Kết luận gắn với dataset lỗi tiêm, diff nhỏ — điều kiện thuận lợi cho LLM.
+
+**H: Self-verify — đóng góp chính — có tác dụng không?**
+Đ: Chưa chứng minh được. Em làm ablation: tắt self-verify thì F1 giảm 0,7 điểm, bằng đúng mức dao động giữa hai lần chạy LLM y hệt, trong khi tốn gấp đôi token. Em báo cáo đây là kết quả âm. Giả thuyết: kiểm chứng bằng chính model và chính vai đã sinh finding thì hiếm khi đổi ý; hướng sửa là dùng model hoặc vai khác làm người kiểm chứng.
 
 **H: Tại sao không dùng thẳng ChatGPT/Copilot để review?**
 Đ: Ba lý do. (1) *An toàn*: gửi toàn bộ mã nguồn cho dịch vụ ngoài là rủi ro với repo nội bộ; kiến trúc này cho phép trỏ về model chạy nội bộ mà không sửa logic. (2) *Độ tin cậy*: LLM đơn lẻ hallucinate; hệ thống có bốn lớp kiểm chứng. (3) *Tích hợp quy trình*: tự động chạy khi mở PR, comment đúng dòng, cập nhật trạng thái Checks để chặn merge — không cần thao tác thủ công.
