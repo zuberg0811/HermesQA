@@ -21,6 +21,16 @@ class Settings(BaseSettings):
     anthropic_model: str = "claude-opus-5-5"
     anthropic_effort: str = "medium"   # low | medium | high | xhigh | max
 
+    # Bước kiểm chứng sau khi LLM sinh finding:
+    #   factcheck = mặc định GIỮ, chỉ bỏ khi diff chứng minh sai (có bằng chứng kiểm được bằng code)
+    #   legacy    = prompt cũ "chỉ giữ finding thật sự là vấn đề" (giữ lại để làm đối chứng)
+    #   off       = không kiểm chứng
+    verify_mode: str = "factcheck"
+    # Ngân sách ký tự cho MỘT lần gọi LLM (diff + context của các file trong lô). Vượt -> chia lô,
+    # không cắt im lặng. 1 file vượt max_file_chars -> cắt CÓ GHI NHẬN trong report.
+    max_prompt_chars: int = 60000
+    max_file_chars: int = 30000
+
     # Infra
     redis_url: str = "redis://redis:6379/0"
     database_url: str = "postgresql+psycopg://hermesqa:hermesqa@postgres:5432/hermesqa"

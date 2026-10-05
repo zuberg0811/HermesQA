@@ -47,6 +47,7 @@ Bạn là DevOps / SRE Engineer chịu trách nhiệm cho hệ thống chạy �
 
 # Quy tắc chống nhiễu
 - Tối đa **8 findings**. Chỉ báo dòng nằm trong diff.
+- Thiếu `HEALTHCHECK`, thiếu multi-stage, chưa ghim digest... là gợi ý cải thiện: chỉ nêu khi diff ĐỤNG tới phần đó, không nêu như lỗi của một thay đổi không liên quan.
 - Phân biệt môi trường: file dev (`docker-compose.dev.yml`) được nới lỏng hơn prod; nói rõ nếu bạn giả định.
 - Confidence < 0.6 → bỏ.
 - `suggested_fix` = snippet cấu hình sửa xong, copy-paste được (Dockerfile/YAML/HCL đúng cú pháp).

@@ -1,4 +1,4 @@
-"""Bộ nhớ theo repo: lưu convention/feedback học được để lần review sau dùng lại.
+"""Bộ nhớ theo repo: convention/feedback học được, và dấu vân tay comment đã đăng (để không đăng lại).
 MVP dùng Postgres qua SQLAlchemy; Hermes Agent có memory riêng nhưng ta giữ 1 lớp độc lập để không lock-in."""
 import logging
 from datetime import datetime
@@ -54,4 +54,31 @@ def get_repo_memory(repo: str, limit: int = 20) -> str:
 def add_memory(repo: str, note: str, source: str = "feedback"):
     with Session() as s:
         s.add(RepoMemory(repo=repo, note=note, source=source))
+        s.commit()
+
+
+class PostedComment(Base):
+    """Dấu vân tay của mỗi comment inline đã đăng lên một PR (xem postprocess.fingerprint)."""
+    __tablename__ = "posted_comments"
+    id = Column(Integer, primary_key=True)
+    repo = Column(String, index=True)
+    pr_number = Column(Integer, index=True)
+    fingerprint = Column(String, index=True)
+    head_sha = Column(String)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+def get_posted(repo: str, pr_number: int) -> set[str]:
+    """Dấu vân tay của mọi comment đã đăng lên PR này ở các lần chạy trước."""
+    with Session() as s:
+        rows = s.query(PostedComment.fingerprint).filter_by(repo=repo, pr_number=pr_number).all()
+    return {r[0] for r in rows}
+
+
+def save_posted(repo: str, pr_number: int, head_sha: str, fingerprints: list[str]):
+    if not fingerprints:
+        return
+    with Session() as s:
+        s.add_all(PostedComment(repo=repo, pr_number=pr_number, fingerprint=fp, head_sha=head_sha)
+                  for fp in dict.fromkeys(fingerprints))
         s.commit()

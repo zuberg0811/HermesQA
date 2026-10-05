@@ -25,10 +25,9 @@ def load_json(path, default):
         return default
 
 
-def match_case(findings: list[dict], truths: list[dict]):
-    """Greedy match: mỗi truth khớp tối đa 1 finding và ngược lại. Trả (tp, fp, fn, missed)."""
-    used = set()
-    matched_truths = set()
+def matched_indices(findings: list[dict], truths: list[dict], tol: int = LINE_TOLERANCE) -> dict[int, int]:
+    """Greedy match: moi truth khop toi da 1 finding va nguoc lai. Tra {chi so finding: chi so truth}."""
+    used: dict[int, int] = {}
     for t_idx, t in enumerate(truths):
         best = None
         for f_idx, f in enumerate(findings):
@@ -36,7 +35,7 @@ def match_case(findings: list[dict], truths: list[dict]):
                 continue
             if f["file"] != t["file"]:
                 continue
-            if abs(int(f["line"]) - int(t["line"])) > LINE_TOLERANCE:
+            if abs(int(f["line"]) - int(t["line"])) > tol:
                 continue
             if f.get("category") not in t["categories"]:
                 continue
@@ -44,8 +43,14 @@ def match_case(findings: list[dict], truths: list[dict]):
             if best is None or d < best[0]:
                 best = (d, f_idx)
         if best is not None:
-            used.add(best[1])
-            matched_truths.add(t_idx)
+            used[best[1]] = t_idx
+    return used
+
+
+def match_case(findings: list[dict], truths: list[dict], tol: int = LINE_TOLERANCE):
+    """Tra (tp, fp, fn, missed)."""
+    used = matched_indices(findings, truths, tol)
+    matched_truths = set(used.values())
     tp = len(matched_truths)
     fp = len(findings) - len(used)
     fn = len(truths) - tp
@@ -57,6 +62,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--truth", default=os.path.join("eval", "ground_truth.json"))
     ap.add_argument("--out", default=os.path.join("eval", "out"))
+    ap.add_argument("--tolerance", type=int, default=LINE_TOLERANCE,
+                    help="do lech dong toi da de tinh la trung (mac dinh 3; dat 0 de do do chinh xac cua viec ghim)")
     a = ap.parse_args()
 
     gt = load_json(a.truth, None)
@@ -88,7 +95,7 @@ def main():
                 continue  # case chưa chạy với config này -> loại khỏi thống kê
             n_cases += 1
             findings = load_json(fpath, [])
-            tp, fp, fn, missed = match_case(findings, c["truth"])
+            tp, fp, fn, missed = match_case(findings, c["truth"], a.tolerance)
             total_tp += tp; total_fp += fp; total_fn += fn
             missed_ids = [id(m) for m in missed]
             for t in c["truth"]:
@@ -127,7 +134,7 @@ def main():
     for cfg, n, tp, fp, fn, p, r, f1, s, tok in summary_rows:
         lines.append(f"| {cfg} | {n} | {tp} | {fp} | {fn} | {p:.1%} | {r:.1%} | {f1:.1%} | {s:.1f} | {tok:.0f} |")
 
-    out_md = os.path.join(a.out, "results.md")
+    out_md = os.path.join(a.out, "results.md" if a.tolerance == LINE_TOLERANCE else f"results_tol{a.tolerance}.md")
     with open(out_md, "w", encoding="utf-8") as f:
         f.write("\n".join(lines) + "\n")
 

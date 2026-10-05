@@ -36,14 +36,35 @@ _Tạo bởi HermesQA · static tools: semgrep, bandit, gitleaks, hadolint, ruff
 """)
 
 
+SCOPE_BLOCK = Template("""{% if skipped %}
+## Phạm vi review
+Các file sau **không** được LLM review (hoặc chỉ được review một phần). Không có nhận xét ở đây
+không có nghĩa là không có vấn đề:
+{% for s in skipped %}- {{ s.describe() }}
+{% endfor %}{% endif %}{% if removed %}
+<details><summary>{{ removed | length }} nhận xét của LLM bị loại sau khi kiểm chứng</summary>
+
+{% for r in removed %}- `{{ r.file }}:{{ r.line }}` {{ r.title }} — căn cứ {{ r.ground }}: {{ r.check }}
+{% endfor %}
+</details>
+{% endif %}""")
+
+
 def build_markdown(pr: dict, roles: list[str], summaries: dict, findings: list[Finding], model: str,
-                   tools: dict | None = None) -> str:
+                   tools: dict | None = None, skipped: list | None = None, removed: list | None = None) -> str:
     findings = sorted(findings, key=lambda f: (-SEVERITY_RANK[f.severity], f.file, f.line))
-    return TEMPLATE.render(pr=pr, roles=roles, summaries=summaries, findings=findings,
-                           counts=Counter(f.severity for f in findings), model=model, tools=tools)
+    md = TEMPLATE.render(pr=pr, roles=roles, summaries=summaries, findings=findings,
+                         counts=Counter(f.severity for f in findings), model=model, tools=tools)
+    scope = SCOPE_BLOCK.render(skipped=skipped or [], removed=removed or [])
+    if scope.strip():
+        marker = "\n---\n_Tạo bởi HermesQA"
+        head, sep, tail = md.rpartition(marker)
+        md = f"{head}\n{scope}{sep}{tail}" if sep else md + "\n" + scope
+    return md
 
 
-def build_pr_summary(summaries: dict, inline: list[Finding], overflow: list[Finding], report_url: str | None) -> str:
+def build_pr_summary(summaries: dict, inline: list[Finding], overflow: list[Finding], report_url: str | None,
+                     skipped: list | None = None, already_posted: int = 0) -> str:
     counts = Counter(f.severity for f in inline + overflow)
     lines = ["## 🤖 HermesQA Review", ""]
     for r, s in summaries.items():
@@ -51,9 +72,18 @@ def build_pr_summary(summaries: dict, inline: list[Finding], overflow: list[Find
     lines += ["", f"**Phát hiện:** {counts.get('critical',0)} critical · {counts.get('high',0)} high · "
               f"{counts.get('medium',0)} medium · {counts.get('low',0)} low",
               f"Đã comment inline {len(inline)} mục."]
+    if already_posted:
+        lines.append(f"{already_posted} nhận xét từ lần review trước vẫn còn hiệu lực và không được đăng lại.")
+    if skipped:
+        lines += ["", f"⚠️ {len(skipped)} file không được review đầy đủ:"]
+        lines += [f"- {s.describe()}" for s in skipped[:15]]
+        if len(skipped) > 15:
+            lines.append(f"- … và {len(skipped) - 15} file khác (xem report đầy đủ)")
     if overflow:
         lines += ["", "<details><summary>Các phát hiện khác (không comment inline)</summary>", ""]
         lines += [f"- `{f.file}:{f.line}` [{f.severity}] {f.title}" for f in overflow[:30]]
+        if len(overflow) > 30:
+            lines.append(f"- … và {len(overflow) - 30} phát hiện khác (xem report đầy đủ)")
         lines += ["", "</details>"]
     if report_url:
         lines.append(f"\n📄 Report đầy đủ: {report_url}")

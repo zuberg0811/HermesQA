@@ -1,6 +1,32 @@
 """Lọc, dedupe, xếp hạng và map finding -> comment GitHub."""
+import hashlib
+
 from app.review.schemas import Finding, SEVERITY_RANK
 from app.review.diff_utils import ChangedFile, commentable_line
+
+
+def fingerprint(f: Finding) -> str:
+    """Dấu vân tay ổn định giữa các lần chạy, để lần push sau không đăng lại comment cũ.
+
+    Không dùng số dòng (trôi khi thêm/bớt code phía trên) và không dùng tiêu đề của LLM (mỗi lần
+    chạy diễn đạt một kiểu). Dùng: file + loại + NỘI DUNG dòng code. Static tool có mã luật ổn định
+    nên thêm mã luật để hai luật khác nhau trên cùng một dòng không trùng dấu.
+    """
+    code = " ".join(f.existing_code.split())
+    if f.source == "llm":
+        raw = f"{f.file}|llm|{f.category}|{code or ' '.join(f.title.lower().split())}"
+    else:
+        raw = f"{f.file}|{f.source}|{f.title}|{code or f.line}"
+    return hashlib.sha1(raw.encode("utf-8")).hexdigest()[:16]
+
+
+def split_new(findings: list[Finding], seen: set[str]) -> tuple[list[Finding], list[Finding]]:
+    """Tách (chưa đăng, đã đăng ở lần trước) theo dấu vân tay. Gán luôn f.fingerprint."""
+    new, repeated = [], []
+    for f in findings:
+        f.fingerprint = f.fingerprint or fingerprint(f)
+        (repeated if f.fingerprint in seen else new).append(f)
+    return new, repeated
 
 SEV_EMOJI = {"critical": "🚨", "high": "🔴", "medium": "🟠", "low": "🟡"}
 

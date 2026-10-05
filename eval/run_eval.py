@@ -31,6 +31,9 @@ CONFIG_FLAGS = {
     # CHINH model va CHINH vai da sinh ra finding, nen can do chu khong nen mac
     # dinh tin la no hoat dong.
     "llm_noverify": ["--skip-static", "--no-verify"],
+    # Doi chung: buoc kiem chung kieu CU ("chi giu finding that su la van de") tren cung pipeline moi,
+    # de so 3 che do tren cung mot nen: factcheck (mac dinh, config "llm") / legacy / off.
+    "llm_legacyverify": ["--skip-static", "--verify", "legacy"],
 }
 
 TOKEN_RE = re.compile(r"tokens in=(\d+) out=(\d+)")
@@ -41,7 +44,8 @@ def run_case(repo: str, branch: str, cid: str, config: str, out_dir: str) -> dic
     out_json = os.path.join(out_dir, f"{cid}.json")
     out_md = os.path.join(out_dir, f"{cid}.md")
     cmd = [sys.executable, "-m", "app.cli", "--repo", repo, "--base", "main", "--head", branch,
-           "--out", out_md, "--json", out_json, *CONFIG_FLAGS[config]]
+           "--out", out_md, "--json", out_json,
+           "--meta", os.path.join(out_dir, "_meta", f"{cid}.json"), *CONFIG_FLAGS[config]]
 
     env = dict(os.environ)
     # Eval đo KHẢ NĂNG PHÁT HIỆN nên nới policy: giữ mọi severity, không lọc confidence.
