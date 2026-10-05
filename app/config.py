@@ -16,6 +16,10 @@ class Settings(BaseSettings):
     llm_api_key: str = ""
     llm_model: str = "anthropic/claude-sonnet-4"
     hermes_cmd: str = "hermes run --skill {skill_dir} --json"
+    # Backend "anthropic": SDK chính thức. Key để trống -> SDK tự đọc ANTHROPIC_API_KEY.
+    anthropic_api_key: str = ""
+    anthropic_model: str = "claude-opus-5-5"
+    anthropic_effort: str = "medium"   # low | medium | high | xhigh | max
 
     # Infra
     redis_url: str = "redis://redis:6379/0"

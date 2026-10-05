@@ -119,3 +119,53 @@ def test_self_verify_builds_prompt_without_format_error():
     assert "prompt" in captured, "backend không được gọi -> self_verify đã nuốt lỗi"
     assert '"summary"' in captured["prompt"]        # OUTPUT_CONTRACT có mặt nguyên vẹn
     assert verified.summary == "s"                  # summary cũ được giữ khi verify trả rỗng
+
+
+def test_collect_applies_noise_filter(tmp_path):
+    """is_noise() phải được gọi BÊN TRONG collect(): lần đầu bộ lọc có test riêng nhưng
+    không được nối vào collect(), nên eval thật vẫn ra 11 FP B101 trong khi rescore thì không."""
+    import json
+    from app.review.static_tools import collect
+    bandit = {"results": [
+        {"filename": "/src/tests/test_utils.py", "line_number": 5, "issue_severity": "LOW",
+         "issue_confidence": "HIGH", "test_id": "B101", "test_name": "assert_used", "issue_text": "assert"},
+        {"filename": "/src/app/utils.py", "line_number": 9, "issue_severity": "HIGH",
+         "issue_confidence": "HIGH", "test_id": "B602", "test_name": "subprocess_popen_with_shell_equals_true", "issue_text": "shell"},
+    ]}
+    (tmp_path / "bandit.json").write_text(json.dumps(bandit), encoding="utf-8")
+    titles = [f.title for f in collect(str(tmp_path))]
+    assert titles == ["B602: subprocess_popen_with_shell_equals_true"]
+
+
+def test_anthropic_backend_parses_text_and_rejects_refusal():
+    """Backend Anthropic: lấy text block -> JSON; stop_reason refusal phải raise chứ không trả findings rỗng."""
+    from types import SimpleNamespace as NS
+    from app.review.agent import AnthropicBackend
+
+    class FakeMessages:
+        def __init__(self, resp):
+            self.resp, self.calls = resp, []
+
+        def create(self, **kw):
+            self.calls.append(kw)
+            return self.resp
+
+    def backend_with(resp):
+        fm = FakeMessages(resp)
+        client = NS(beta=NS(messages=fm))
+        return AnthropicBackend(client=client), fm
+
+    ok = NS(stop_reason="end_turn", model="claude-opus-5-5",
+            content=[NS(type="thinking", thinking=""), NS(type="text", text='{"summary":"s","findings":[]}')],
+            usage=NS(input_tokens=10, output_tokens=5, cache_read_input_tokens=0))
+    be, fm = backend_with(ok)
+    out = be.run("SE", "prompt")
+    assert out.summary == "s" and fm.calls[0]["messages"][0]["content"] == "prompt"
+    assert fm.calls[0]["system"][0]["cache_control"] == {"type": "ephemeral"}
+
+    refused = NS(stop_reason="refusal", model="claude-opus-5-5", content=[],
+                 stop_details=NS(category="cyber"), usage=None)
+    be, _ = backend_with(refused)
+    import pytest
+    with pytest.raises(RuntimeError):
+        be.run("SE", "prompt")

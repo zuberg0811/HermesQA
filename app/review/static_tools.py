@@ -147,4 +147,7 @@ def collect(out_dir: str) -> list[Finding]:
             title=r["code"], explanation=r["message"], suggested_fix=(r.get("fix") or {}).get("message", "") or "",
             confidence=0.9, role="static:ruff", source="ruff"))
 
-    return findings
+    # Loc nhieu o DAY, trong collect(), chu khong de caller tu nho goi is_noise():
+    # lan dau bo loc duoc viet xong, co test rieng, nhung khong duoc noi vao day ->
+    # eval chay that van thay 11 FP B101 trong khi rescore offline thi khong.
+    return [f for f in findings if not is_noise(f)]

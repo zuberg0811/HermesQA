@@ -1,6 +1,6 @@
 # Báo cáo tiến độ đồ án: HermesQA — Bot AI tự động review Pull Request
 
-**Cập nhật:** 05/10/2026 · **Trạng thái:** Hệ thống chạy đầu-cuối; thực nghiệm đã chạy đủ 2 bộ dữ liệu (Python 35 case, đa ngôn ngữ 18 case) + ablation self-verify; bước hợp nhất static/LLM đã sửa theo kết quả đo
+**Cập nhật:** 05/10/2026 · **Trạng thái:** Hệ thống chạy đầu-cuối; thực nghiệm đã chạy đủ 2 bộ dữ liệu + ablation self-verify; bước hợp nhất static/LLM đã sửa theo kết quả đo và đã chạy lại thật để xác nhận
 
 ---
 
@@ -159,7 +159,9 @@ Phần này minh chứng cho việc hệ thống đã thực sự được chạ
 | D1 | FP của cấu hình `both` (61) **lớn hơn** tổng FP hai nguồn (26 + 27): bước gộp không gộp được gì | Dedupe đòi *cùng category* giữa mọi nguồn, trong khi static và LLM đặt tên loại lỗi khác nhau; LLM bị dặn "không lặp lại static" nên báo thêm nhận xét phụ ngay cạnh đó (19/35 FP LLM nằm trong ±2 dòng của một finding static) | Quy tắc gộp nhận biết nguồn (mục 4, điểm 4). Thử bản "gộp theo vị trí bất kể nguồn" trước: mất 2 TP vì gộp nhầm hai vai LLM; thử bản "finding nghiêm trọng hơn làm chính": LLM tự chấm *high* cho "thiếu unit test" đè lên finding static đúng, mất 3 TP. Bản cuối không đổi nhãn, không giấu finding nặng hơn |
 | D2 | 11/26 FP của `static` là bandit **B101 `assert_used`** trong `tests/` | `assert` là cách viết chuẩn của pytest; tài liệu bandit khuyến nghị bỏ B101 cho test code | Bộ lọc nhiễu `is_noise()` trong `static_tools.py`, có bảng luật tường minh. Nguyên tắc: chỉ thêm luật là best practice được tài liệu công cụ ghi nhận, không thêm luật vì nó làm đẹp điểm eval |
 
-Hai thay đổi này chỉ chạm bước hậu xử lý nên được kiểm chứng bằng `eval/rescore.py`: lấy findings thô đã lưu, chạy qua hậu xử lý mới, chấm lại (static tools tất định; phần LLM không sinh lại). Có **5 unit test** mới cho các quy tắc trên.
+| D3 | Chạy lại `both` thật (05/10) vẫn thấy **11 FP B101** dù D2 đã có test pass | Bộ lọc `is_noise()` được viết, có unit test riêng, nhưng **chưa được nối vào `collect()`** — lệnh sửa file bằng script không khớp chuỗi (file dùng CRLF) và thất bại im lặng. Rescore offline cho số đúng vì `rescore.py` gọi `is_noise()` trực tiếp, nên không ai nhận ra | Nối bộ lọc vào `collect()`; thêm test đi qua chính `collect()` với file `bandit.json` giả; chạy lại CLI thật trên case `skip-test` xác nhận 0 B101 |
+
+Hai thay đổi D1, D2 chỉ chạm bước hậu xử lý nên được kiểm chứng trước bằng `eval/rescore.py`: lấy findings thô đã lưu, chạy qua hậu xử lý mới, chấm lại (static tools tất định; phần LLM không sinh lại). Sau đó chạy lại thật toàn bộ `both` để xác nhận (mục 7.2). D3 là bài học thứ **năm** của lớp bug "công cụ im lặng": một test cho hàm lẻ không chứng minh hàm đó được gọi; test phải đi qua đúng đường người dùng đi. Có **6 unit test** mới cho các quy tắc trên.
 
 ---
 
@@ -227,6 +229,16 @@ Tổng ground truth: 36 lỗi. Chi tiết từng case: `eval/out/results.md`.
 | `llm` | 34 | 27 | 2 | 55,7 % | 94,4 % | 70,1 % | không đổi |
 | `both` | 35 | 34 | 1 | 50,7 % | **97,2 %** | 66,7 % | F1 +13,7 điểm, FP 61 → 34, **không mất TP nào** |
 
+**Chạy lại thật `both` (05/10/2026, 35/35 lượt thành công, cùng model Gemini như các lần trước):**
+
+| Lần chạy | TP | FP | FN | Precision | Recall | F1 | Ghi chú |
+|---|---|---|---|---|---|---|---|
+| Rescore offline (bảng trên) | 35 | 34 | 1 | 50,7 % | 97,2 % | 66,7 % | LLM không sinh lại |
+| Chạy thật, code lúc đó (còn bug D3) | 34 | 44 | 2 | 43,6 % | 94,4 % | 59,6 % | 11/44 FP là B101 |
+| Chạy thật + bộ lọc đã nối | 34 | 33 | 2 | 50,7 % | 94,4 % | **66,0 %** | Tương đương code sau D3 (static tất định) |
+
+Lần chạy thật xác nhận số rescore: chênh đúng 1 TP (`skip-test`, lần này LLM bỏ sót), bằng mức dao động giữa hai lần chạy `llm` y hệt đã đo ở 7.1. FP của LLM trong `both` là 17 (rescore: 19). Số liệu `both` dùng để kết luận từ đây là **66,0 %** (chạy thật), không phải 66,7 %.
+
 **Khả năng phát hiện theo nhóm lỗi (bắt được / tổng), sau 7.2:**
 
 | Nhóm | `static` | `llm` | `both` |
@@ -288,7 +300,7 @@ Kết luận gắn với **dataset lỗi tiêm nhân tạo, diff nhỏ** — đi
 | Kiểm thử đơn vị / tích hợp | ✅ 8/8 unit pass; 8 integration test (cần Docker) |
 | **Chạy thực nghiệm đầy đủ** | ✅ **Hoàn thành — 35×4 + 18×3 + 35 (lần 2) = 229 lượt, không lượt nào thất bại** |
 | Sửa bước hợp nhất static/LLM theo kết quả đo | ✅ Xong 05/10 (D1, D2), kiểm chứng offline bằng `rescore.py` |
-| Chạy lại `both` thật với hậu xử lý mới | ⏳ Chưa — cần Docker + quota LLM; số liệu 7.2 là rescore offline |
+| Chạy lại `both` thật với hậu xử lý mới | ✅ Xong 05/10 — 35/35 lượt, F1 66,0 % sau khi nối bộ lọc; phát hiện và sửa bug D3 |
 | Triển khai GitHub App thật | ⏳ Chưa — cần đăng ký GitHub App và tunnel công khai |
 | Viết báo cáo/luận văn | 🔄 Đang viết — đã có đủ số liệu thực nghiệm |
 
@@ -303,7 +315,7 @@ Kết luận gắn với **dataset lỗi tiêm nhân tạo, diff nhỏ** — đi
 4. **Phụ thuộc vào một nhà cung cấp LLM**; kết quả có thể khác khi đổi model. (Kiến trúc đã tách qua `AgentBackend` protocol nên đổi model không phải sửa logic.)
 5. **Bộ nhớ repo chưa có vòng phản hồi tự động**: hiện phải nhập tay, chưa học từ phản ứng 👍/👎 của lập trình viên.
 6. **Chưa đo chi phí thực tế bằng tiền** trên quy mô lớn.
-7. **Số liệu `both` sau khi sửa bước gộp (mục 7.2) là chấm lại offline**, không phải chạy lại: phần LLM vẫn là output sinh ra khi prompt còn chứa tóm tắt static cũ (có B101). Cần một lần chạy lại thật để xác nhận.
+7. **Lần chạy lại thật `both` vẫn có prompt LLM chứa tóm tắt static có B101** (bug D3 được phát hiện nhờ chính lần chạy đó). Static tất định nên lọc lại là tương đương, nhưng phần LLM chưa được chạy với tóm tắt đã lọc; chênh lệch kỳ vọng nhỏ hơn mức dao động giữa hai lần chạy.
 8. **Cách chấm điểm phạt oan trường hợp một phát hiện bao trùm nhiều ground truth liền nhau** (xem case `secret-aws`, mục 7.4), làm recall báo cáo thấp hơn thực tế.
 9. **Self-verify dùng chính model đã sinh finding** nên chưa đo được lợi ích (mục 7.4, điểm 4).
 

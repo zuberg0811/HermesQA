@@ -45,6 +45,7 @@ python eval/score.py --out eval/out-v2
 | `eval/out-v2` | `eval/out` sau khi rescore bằng hậu xử lý hiện tại (dedupe nhận biết nguồn + lọc B101) |
 | `eval/out-multi` / `eval/out-multi-v2` | Bộ đa ngôn ngữ, thô / rescore |
 | `eval/out-noise` | Lần chạy `llm` thứ hai y hệt cấu hình, để đo dao động giữa hai lần chạy LLM |
+| `eval/out-both-v2` / `eval/out-both-v2-fixed` | Chạy lại thật `both` ngày 05/10 với dedupe mới; bản `-fixed` là rescore sau khi nối bộ lọc B101 vào `collect()` (bug D3) |
 
 ## Ghi chú phương pháp
 - `run_eval.py` đặt `MIN_SEVERITY_TO_COMMENT=low` và `MIN_CONFIDENCE=0.0` cho tiến trình con

@@ -93,6 +93,51 @@ class OpenAICompatBackend:
         return AgentOutput.model_validate(_extract_json(raw))
 
 
+class AnthropicBackend:
+    """Gọi Claude qua SDK chính thức của Anthropic (không qua lớp OpenAI-compat).
+
+    Cùng contract prompt/JSON với OpenAICompatBackend để so sánh model được công bằng.
+    - system prompt (SKILL.md của vai) ổn định theo vai -> đánh dấu cache_control.
+    - fallbacks="default": nếu bộ lọc an toàn từ chối (review code có SQLi, command
+      injection... là nội dung hợp lệ nhưng có thể bị phân loại "cyber"), API tự chạy
+      lại trên model dự phòng trong cùng request.
+    - stop_reason == "refusal" sau cả chuỗi -> raise để caller đánh dấu vai lỗi,
+      không để trả về findings rỗng giả vờ "không có vấn đề".
+    """
+    def __init__(self, client=None):
+        if client is None:
+            import anthropic
+            kwargs = {"max_retries": 5, "timeout": 300.0}
+            if settings.anthropic_api_key:
+                kwargs["api_key"] = settings.anthropic_api_key
+            client = anthropic.Anthropic(**kwargs)
+        self.client = client
+
+    def run(self, role: str, user_prompt: str) -> AgentOutput:
+        system = load_skill(role)
+        resp = self.client.beta.messages.create(
+            model=settings.anthropic_model,
+            max_tokens=16000,
+            betas=["server-side-fallback-2026-07-01"],
+            fallbacks="default",
+            output_config={"effort": settings.anthropic_effort},
+            system=[{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}],
+            messages=[{"role": "user", "content": user_prompt}],
+        )
+        if resp.stop_reason == "refusal":
+            detail = getattr(resp, "stop_details", None)
+            raise RuntimeError(f"Claude từ chối request (category={getattr(detail, 'category', None)})")
+        if resp.stop_reason == "max_tokens":
+            log.warning("[%s] output bị cắt vì max_tokens", role)
+        raw = "".join(b.text for b in resp.content if b.type == "text") or "{}"
+        usage = getattr(resp, "usage", None)
+        if usage:
+            cached = getattr(usage, "cache_read_input_tokens", 0) or 0
+            log.info("[%s] tokens in=%s out=%s (cache_read=%s, model=%s)", role,
+                     usage.input_tokens + cached, usage.output_tokens, cached, resp.model)
+        return AgentOutput.model_validate(_extract_json(raw))
+
+
 class HermesCLIBackend:
     """Gọi Hermes Agent với skill dir tương ứng. Prompt qua stdin, kỳ vọng JSON trên stdout."""
     def run(self, role: str, user_prompt: str) -> AgentOutput:
@@ -106,7 +151,11 @@ class HermesCLIBackend:
 
 
 def get_backend() -> AgentBackend:
-    return HermesCLIBackend() if settings.agent_backend == "hermes_cli" else OpenAICompatBackend()
+    if settings.agent_backend == "hermes_cli":
+        return HermesCLIBackend()
+    if settings.agent_backend == "anthropic":
+        return AnthropicBackend()
+    return OpenAICompatBackend()
 
 
 VERIFY_PROMPT = """Bạn là reviewer cấp cao kiểm chứng lại các phát hiện của một AI khác.
