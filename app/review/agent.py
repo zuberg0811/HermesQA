@@ -8,9 +8,10 @@ import logging
 import re
 import shlex
 import subprocess
+import time
 from typing import Protocol
 
-from openai import OpenAI
+from openai import OpenAI, RateLimitError
 from pydantic import ValidationError
 
 from app.config import settings
@@ -70,13 +71,27 @@ def build_user_prompt(pr_meta: dict, files_ctx: list[dict], static_summary: str,
 def _extract_json(text: str) -> dict:
     text = text.strip()
     text = re.sub(r"^```(?:json)?\s*|\s*```$", "", text, flags=re.S)
+    # strict=False: model hay để xuống dòng thật trong chuỗi (vd existing_code nhiều dòng) — hợp lệ với ta
     try:
-        return json.loads(text)
+        return json.loads(text, strict=False)
     except json.JSONDecodeError:
         m = re.search(r"\{.*\}", text, re.S)
         if not m:
             raise
-        return json.loads(m.group(0))
+        return json.loads(m.group(0), strict=False)
+
+
+_RETRY_DELAY = re.compile(r"retry(?:Delay'?:\s*'?|\s+in\s+)(\d+(?:\.\d+)?)\s*s", re.I)
+RATE_LIMIT_MAX_WAIT = 120.0   # giây; hạn mức NGÀY (retry sau hàng giờ) thì không đợi, báo lỗi ngay
+
+
+def rate_limit_wait(err_text: str) -> float | None:
+    """Thời gian cần đợi theo thông điệp 429 của Gemini, hoặc None nếu không nên đợi."""
+    m = _RETRY_DELAY.search(err_text)
+    if not m:
+        return None
+    delay = float(m.group(1))
+    return delay + 1.0 if delay <= RATE_LIMIT_MAX_WAIT else None
 
 
 def parse_output(data: dict) -> AgentOutput:
@@ -121,7 +136,13 @@ class _JsonBackend:
         raise NotImplementedError
 
     def run_json(self, role: str, user_prompt: str, system: str | None = None) -> dict:
-        return _extract_json(self.complete(role, user_prompt, system))
+        # JSON hỏng (thiếu dấu phẩy, ngoặc kép chưa escape) là lỗi ngẫu nhiên của model ~1/15 PR thật:
+        # gọi lại đúng một lần trước khi coi là vai thất bại.
+        try:
+            return _extract_json(self.complete(role, user_prompt, system))
+        except (json.JSONDecodeError, ValueError) as e:
+            log.warning("[%s] JSON hỏng (%s), gọi lại một lần", role, e)
+            return _extract_json(self.complete(role, user_prompt, system))
 
     def run(self, role: str, user_prompt: str) -> AgentOutput:
         return parse_output(self.run_json(role, user_prompt))
@@ -134,11 +155,21 @@ class OpenAICompatBackend(_JsonBackend):
                              max_retries=5, timeout=180.0)
 
     def complete(self, role: str, user_prompt: str, system: str | None = None) -> str:
-        resp = self.client.chat.completions.create(
-            model=settings.llm_model, temperature=0.1, max_tokens=4000,
-            messages=[{"role": "system", "content": system or load_skill(role)},
-                      {"role": "user", "content": user_prompt}],
-        )
+        messages = [{"role": "system", "content": system or load_skill(role)},
+                    {"role": "user", "content": user_prompt}]
+        # Gemini free tier có hạn mức THEO PHÚT (vd 15 req/phút) với retryDelay ~1 phút — dài hơn backoff
+        # của SDK, nên tự đợi đúng thời gian được báo rồi thử lại; hạn mức NGÀY thì ném lỗi ngay.
+        for attempt in range(3):
+            try:
+                resp = self.client.chat.completions.create(model=settings.llm_model, temperature=0.1,
+                                                           max_tokens=4000, messages=messages)
+                break
+            except RateLimitError as e:
+                wait = rate_limit_wait(str(e))
+                if wait is None or attempt == 2:
+                    raise
+                log.warning("[%s] 429 theo phút, đợi %.0fs rồi thử lại", role, wait)
+                time.sleep(wait)
         usage = getattr(resp, "usage", None)
         if usage:
             log.info("[%s] tokens in=%s out=%s", role, usage.prompt_tokens, usage.completion_tokens)
@@ -348,6 +379,12 @@ def _removal_proven(f: Finding, item: dict, files_ctx: list[dict], files_by_path
             ev = _norm(ev[1:])
         if len(ev) < 6:
             return False, "bằng chứng quá ngắn hoặc trống"
+        # Căn cứ B nghĩa là "code đã xử lý ở CHỖ KHÁC". Nếu bằng chứng chính là dòng bị báo thì model đang
+        # lý luận vòng ("nhận xét nói thiếu X, nhưng dòng 12 đã có X" — trong khi dòng 12 chính là chỗ sai).
+        # Eval cho thấy flash-lite loại 4/5 TP theo kiểu này.
+        own_lines = [_norm(l) for l in f.existing_code.splitlines()] if f.existing_code else []
+        if any(ev == l or (ev in l) or (l and l in ev) for l in own_lines if len(l) >= 6):
+            return False, "bằng chứng trùng chính dòng bị báo (không phải chỗ khác đã xử lý)"
         for c in files_ctx:
             if any(ev in l for l in _code_lines(c)):
                 return True, "dòng bằng chứng có thật trong diff/context"
@@ -391,7 +428,8 @@ def fact_check(backend: AgentBackend, role: str, output: AgentOutput, files_ctx:
             drop[idx] = {"role": role, "file": f.file, "line": f.line, "title": f.title,
                          "ground": str(item.get("ground", "")).strip().upper()[:1],
                          "evidence": str(item.get("evidence", ""))[:200],
-                         "reason": str(item.get("reason", ""))[:200], "check": why}
+                         "reason": str(item.get("reason", ""))[:200], "check": why,
+                         "finding": f.model_dump()}   # giữ nguyên finding để eval có thể chấm lại offline
         else:
             log.info("[%s] fact-check muốn loại '%s' nhưng bị từ chối: %s", role, f.title, why)
     kept = [f for i, f in enumerate(output.findings) if i not in drop]

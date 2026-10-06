@@ -18,7 +18,7 @@ from app.config import settings
 from app.review import postprocess, report, static_tools
 from app.review.agent import get_backend
 from app.review.diff_utils import parse_diff
-from app.review.pipeline import LLMReview, attach_code_to_static, run_llm_review
+from app.review.pipeline import LLMReview, attach_code_to_static, run_llm_review, scope_static_to_diff
 from app.review.router import select_roles
 from app.review.schemas import ReviewConfig
 from app.review.static_tools import collect as collect_static
@@ -61,7 +61,7 @@ def main():
         out_dir = tempfile.mkdtemp(prefix="hqa-out-")
         run_static_analysis(a.repo, out_dir, targets=sorted(changed))
         all_static = collect_static(out_dir)
-        static = [f for f in all_static if f.file in changed]
+        static = scope_static_to_diff([f for f in all_static if f.file in changed], files)
         tools = static_tools.tool_status(out_dir, all_static)
         for name, st in tools.items():
             if st["state"] == "failed":

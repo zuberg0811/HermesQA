@@ -1,6 +1,6 @@
 # Đề xuất cải tiến HermesQA sau khi khảo sát Open Code Review của Alibaba
 
-**Ngày:** 05/10/2026 · **Trạng thái:** Đề xuất, chưa triển khai · **Người đọc dự kiến:** giảng viên hướng dẫn, hội đồng, và bất kỳ ai muốn hiểu hướng đi tiếp theo của đồ án mà không cần nền tảng lập trình.
+**Ngày:** 05/10/2026 · **Trạng thái:** Đã triển khai cả 7 đề xuất (06/10/2026, commit `d2c5a0b`); số liệu đo lại sẽ được bổ sung ở mục 9 khi hoàn tất.
 
 ---
 

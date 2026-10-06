@@ -18,6 +18,17 @@ cộng thêm bộ đa ngôn ngữ 18 PR (JS/TS/Java/Go).
   lên findings đã lưu, ghi ra thư mục khác để chấm. Dùng khi chỉ sửa hậu xử lý, không
   muốn tốn quota LLM chạy lại. Giới hạn: với `both`, prompt LLM đã nhìn thấy tóm tắt static
   cũ; rescore không đổi phần LLM đã sinh.
+- `judge_fp.py` — giám khảo LLM bỏ phiếu phân loại từng FP: "đúng nhưng ngoài ground truth"
+  hay "sai sự thật" (đề xuất 7 từ Open Code Review). Ghi `<out>/fp_judgement_<config>.md`.
+  Nên chạy với `LLM_MODEL` KHÁC model sinh nhận xét để giảm thiên vị "đồng ý với chính mình".
+- `aacr_eval.py` — pilot trên PR thật: tập con Python của AACR-Bench (15 PR ≤ 210 dòng, 68 vấn đề
+  chuẩn, ground truth là comment reviewer thật). Bước `prepare` chỉ dùng git; `run` chạy `app.cli`;
+  `score` khớp bằng giám khảo LLM (chặt = đúng dòng ±3, lỏng = chỉ cần cùng vấn đề).
+  Kết quả `eval/aacr/results.md`, có ghi model đã dùng.
+
+Config trong `run_eval.py`: `static`, `llm` (fact-check, mặc định), `llm_noverify`,
+`llm_legacyverify` (self-verify kiểu cũ, để so ba cách kiểm chứng), `both`.
+`score.py --tolerance 0` chấm "đúng từng dòng" (ghi `results_tol0.md`) để đo việc ghim vị trí.
 
 ## Chạy
 ```bash

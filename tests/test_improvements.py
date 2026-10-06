@@ -8,7 +8,7 @@ import pytest
 
 from app.config import settings
 from app.review import postprocess, report
-from app.review.agent import fact_check, parse_output, is_protected
+from app.review.agent import _extract_json, fact_check, parse_output, is_protected, rate_limit_wait
 from app.review.diff_utils import anchor_finding, file_context, parse_diff, render_patch, resolve_anchor, REDACTED
 from app.review.pipeline import run_llm_review
 from app.review.router import select_roles
@@ -218,6 +218,65 @@ def test_fact_check_requires_evidence_that_exists_in_the_diff():
     kept, removed = fact_check(_Judge([{"index": 0, "ground": "B", "evidence": "+    if not xs:", "reason": "đã kiểm tra"}]),
                                "SE", out, _ctx(), _by_path())
     assert kept.findings == [] and removed[0]["ground"] == "B" and "có thật" in removed[0]["check"]
+    assert removed[0]["finding"]["title"] == wrong.title                 # giữ finding gốc để chấm lại offline
+
+
+def test_fact_check_ground_b_rejects_the_flagged_line_as_evidence():
+    # Eval thật: flash-lite loại TP "dùng == với None" với bằng chứng CHÍNH LÀ dòng `if user == None:` — lý luận vòng.
+    # Căn cứ B phải là một dòng KHÁC đã xử lý vấn đề; bằng chứng trùng dòng bị báo thì không được loại.
+    tp = _f(title="chia cho len(xs) có thể bằng 0", sev="medium", code="return sum(xs) / len(xs)")
+    out = AgentOutput(findings=[tp])
+    for ev in ("return sum(xs) / len(xs)", "+    return sum(xs) / len(xs)", "sum(xs) / len(xs)"):
+        kept, removed = fact_check(_Judge([{"index": 0, "ground": "B", "evidence": ev}]), "SE", out, _ctx(), _by_path())
+        assert len(kept.findings) == 1 and removed == [], ev
+
+
+def test_backend_tolerates_raw_newlines_in_json_and_knows_when_to_wait():
+    # PR thật (AACR): model trả existing_code có xuống dòng thật trong chuỗi -> json strict từ chối
+    raw = '```json\n{"summary": "s", "findings": [{"title": "a", "existing_code": "x = 1\n\ty = 2"}]}\n```'
+    assert _extract_json(raw)["findings"][0]["existing_code"] == "x = 1\n\ty = 2"
+    # 429 theo phút của Gemini -> đợi đúng retryDelay; hạn mức ngày (hàng giờ) -> không đợi
+    minute = "Error code: 429 - [{'error': {... 'quotaId': 'GenerateRequestsPerMinutePerProjectPerModel-FreeTier' ... 'retryDelay': '53s'}]}]"
+    day = "... 'quotaId': 'GenerateRequestsPerDayPerProjectPerModel-FreeTier' ... Please retry in 19h21m42.3s ... 'retryDelay': '69702s' ..."
+    assert rate_limit_wait(minute) == 54.0
+    assert rate_limit_wait(day) is None and rate_limit_wait("something else") is None
+
+
+def test_static_findings_outside_diff_hunks_are_dropped():
+    import re
+    from app.review.pipeline import scope_static_to_diff
+
+    files = parse_diff(DIFF, [])
+    svc = next(f for f in files if f.path == "app/svc.py")
+    inside = min(svc.new_lines)                      # dòng trong hunk (kể cả dòng ngữ cảnh)
+    outside = max(svc.new_lines) + 50                # dòng ở phần file không đổi
+    s_in = _f(line=inside, source="bandit", title="B101")
+    s_out = _f(line=outside, source="semgrep", title="ngoài hunk")
+    s_other = _f(line=1, source="ruff", title="file không trong diff")
+    s_other.file = "app/other.py"
+    assert [s.title for s in scope_static_to_diff([s_in, s_out, s_other], files)] == ["B101"]
+    # phải được nối vào cả hai đường chạy thật (bài học D3: hàm có test chưa chắc đã được gọi)
+    for src in ("app/cli.py", "app/worker.py"):
+        assert re.search(r"static = scope_static_to_diff\(", open(src, encoding="utf-8").read()), src
+
+
+def test_run_json_retries_once_on_broken_json():
+    from app.review.agent import _JsonBackend
+
+    class Flaky(_JsonBackend):
+        def __init__(self, replies):
+            self.replies, self.calls = list(replies), 0
+
+        def complete(self, role, user_prompt, system=None):
+            self.calls += 1
+            return self.replies.pop(0)
+
+    b = Flaky(['{"summary": "x" "findings": []}', '{"summary": "ok", "findings": []}'])   # thiếu dấu phẩy rồi tốt
+    assert b.run_json("SE", "p")["summary"] == "ok" and b.calls == 2
+    b = Flaky(['{"a": ', '{"a": '])                                                      # hỏng hai lần -> lỗi thật
+    with pytest.raises(Exception):
+        b.run_json("SE", "p")
+    assert b.calls == 2
 
 
 def test_fact_check_ground_a_is_verified_by_code():

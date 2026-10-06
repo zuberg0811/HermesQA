@@ -11,7 +11,7 @@ from app.memory import init_db, save_run, get_repo_memory, get_posted, save_post
 from app.review import postprocess, report, static_tools
 from app.review.agent import get_backend
 from app.review.diff_utils import parse_diff
-from app.review.pipeline import attach_code_to_static, run_llm_review
+from app.review.pipeline import attach_code_to_static, run_llm_review, scope_static_to_diff
 from app.review.router import select_roles
 from app.review.schemas import ReviewConfig
 from app.review.static_tools import collect as collect_static
@@ -68,7 +68,7 @@ def review_pull_request(job: dict):
         #    có thể chứa bí mật — sandbox không có mạng; chỉ LLM mới không được thấy chúng.
         run_static_analysis(repo_dir, out_dir, targets=sorted(changed_paths))
         all_static = collect_static(out_dir)
-        static = [f for f in all_static if f.file in changed_paths]
+        static = scope_static_to_diff([f for f in all_static if f.file in changed_paths], files)
         tools = static_tools.tool_status(out_dir, all_static)
         for name, st in tools.items():
             if st["state"] == "failed":

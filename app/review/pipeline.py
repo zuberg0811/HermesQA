@@ -62,6 +62,25 @@ def _fix_path(path: str, known: list[str]) -> str:
     return tail[0] if len(tail) == 1 else p
 
 
+def scope_static_to_diff(static: list[Finding], files: list[ChangedFile]) -> list[Finding]:
+    """Chỉ giữ finding static nằm TRONG hunk của diff (dòng thêm mới hoặc dòng ngữ cảnh quanh đó).
+
+    Công cụ static quét cả file, nên trên repo thật phần lớn cảnh báo rơi vào code không hề thay đổi
+    (pilot AACR: 240/275 finding static ngoài hunk). Chúng không phải việc của PR này, và GitHub cũng
+    từ chối đăng review comment lên dòng ngoài hunk. File không có trong diff thì bỏ.
+    """
+    by_path = {f.path: f for f in files}
+    kept = []
+    for s in static:
+        cf = by_path.get(s.file)
+        if cf is not None and s.line in cf.new_lines:
+            kept.append(s)
+    dropped = len(static) - len(kept)
+    if dropped:
+        log.info("bỏ %d finding static nằm ngoài hunk của diff", dropped)
+    return kept
+
+
 def attach_code_to_static(static: list[Finding], files: list[ChangedFile]) -> None:
     """Gắn nội dung dòng vào finding static (dùng cho dấu vân tay: số dòng trôi giữa các lần push, nội dung thì không)."""
     by_path = {f.path: f for f in files}

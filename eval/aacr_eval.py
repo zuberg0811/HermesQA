@@ -78,8 +78,11 @@ def load_prs(lang: str, max_lines: int) -> "OrderedDict[str, dict]":
         if not m:
             continue
         pid = f"{m.group(1)}_{m.group(2)}_{m.group(3)}"
+        # Tên trường trong AACR-Bench NGƯỢC với trực giác: pr_source_commit = commit của nhánh ĐÍCH (base.sha
+        # theo GitHub API, đã kiểm tra cả 15 PR), pr_target_commit = head của nhánh PR lúc review. Bản đầu của
+        # script hiểu ngược nên review diff đảo chiều / kèm hàng nghìn dòng không thuộc PR — đã bỏ kết quả đó.
         pr = prs.setdefault(pid, {"id": pid, "owner": m.group(1), "repo": m.group(2), "number": int(m.group(3)),
-                                  "url": r["pr_url"], "source": r["pr_source_commit"], "target": r["pr_target_commit"],
+                                  "url": r["pr_url"], "base": r["pr_source_commit"], "head": r["pr_target_commit"],
                                   "lines": int(r["pr_change_line_count"]), "truth": []})
         pr["truth"].append({"path": r["path"], "from": int(r["from_line"] or 0), "to": int(r["to_line"] or 0),
                             "side": r.get("side", "right"), "note": r["note"], "category": r["category"],
@@ -92,7 +95,11 @@ def repo_dir(pr: dict) -> str:
 
 
 def prepare(pr: dict) -> str:
-    """Checkout repo ở commit nguồn của PR và ghi diff (đích -> nguồn). Trả đường dẫn file diff."""
+    """Checkout repo ở head của PR và ghi diff base...head (từ merge-base, đúng nội dung PR). Trả đường dẫn diff.
+
+    Diff lấy qua GitHub compare vì repo chỉ fetch nông (depth 1) nên git cục bộ không tính được merge-base;
+    diff hai chấm `git diff base head` sẽ kèm mọi thay đổi của nhánh đích sau khi PR rẽ nhánh.
+    """
     d = repo_dir(pr)
     diff_path = os.path.join(WORK, "diffs", pr["id"] + ".diff")
     os.makedirs(os.path.dirname(diff_path), exist_ok=True)
@@ -101,13 +108,17 @@ def prepare(pr: dict) -> str:
         os.makedirs(d, exist_ok=True)
         sh(["git", "init", "-q", d])
         sh(["git", "-C", d, "config", "core.autocrlf", "false"])
-    for sha in (pr["target"], pr["source"]):
-        if subprocess.run(["git", "-C", d, "cat-file", "-e", sha + "^{commit}"], capture_output=True).returncode != 0:
-            sh(["git", "-C", d, "fetch", "-q", "--depth", "1", url, sha])
-    sh(["git", "-C", d, "checkout", "-q", "-f", pr["source"]])
-    diff = sh(["git", "-C", d, "-c", "core.quotepath=false", "diff", pr["target"], pr["source"]])
-    with open(diff_path, "w", encoding="utf-8", newline="\n") as f:
-        f.write(diff)
+    if subprocess.run(["git", "-C", d, "cat-file", "-e", pr["head"] + "^{commit}"], capture_output=True).returncode != 0:
+        sh(["git", "-C", d, "fetch", "-q", "--depth", "1", url, pr["head"]])
+    sh(["git", "-C", d, "checkout", "-q", "-f", pr["head"]])
+    if not os.path.exists(diff_path):
+        cmp_url = f"https://github.com/{pr['owner']}/{pr['repo']}/compare/{pr['base']}...{pr['head']}.diff"
+        req = urllib.request.Request(cmp_url, headers={"User-Agent": "hermesqa-eval"})
+        diff = urllib.request.urlopen(req, timeout=60).read().decode("utf-8", errors="replace")
+        if not diff.startswith("diff --git"):
+            raise RuntimeError(f"GitHub compare không trả diff ({len(diff)} byte)")
+        with open(diff_path, "w", encoding="utf-8", newline="\n") as f:
+            f.write(diff)
     return diff_path
 
 
@@ -244,8 +255,8 @@ def main():
             for pr in prs.values():
                 if runs.get(pr["id"], {}).get("returncode") == 0:
                     continue
-                # mỗi PR cần working tree ở đúng commit nguồn (context file đọc từ đó)
-                sh(["git", "-C", repo_dir(pr), "checkout", "-q", "-f", pr["source"]])
+                # mỗi PR cần working tree ở đúng head của PR (context file đọc từ đó)
+                sh(["git", "-C", repo_dir(pr), "checkout", "-q", "-f", pr["head"]])
                 print(f"[{cfg}] {pr['id']} ...", flush=True)
                 rec = run_config(pr, cfg, diffs[pr["id"]])
                 print(f"    -> {'OK' if rec['returncode'] == 0 else 'LỖI'} {rec['seconds']}s tokens {rec['tokens_in']}/{rec['tokens_out']}", flush=True)
@@ -253,7 +264,10 @@ def main():
                 json.dump(list(runs.values()), open(runs_path, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
 
     if "score" in steps:
+        from app.config import settings
+        model = settings.anthropic_model if settings.agent_backend == "anthropic" else settings.llm_model
         lines = [f"# HermesQA trên PR thật — AACR-Bench, tập con {a.lang} ({len(prs)} PR <= {a.max_lines} dòng)", "",
+                 f"Model review và giám khảo khớp: `{model}` ({a.votes} phiếu/vấn đề). ",
                  "Chặt = cùng file, dòng trong khoảng ±3, và giám khảo LLM xác nhận cùng vấn đề. "
                  "Lỏng = cùng file và cùng vấn đề (bỏ qua số dòng).", "",
                  "| Config | PR | Vấn đề chuẩn | Finding | TP chặt | P | R | F1 | TP lỏng | P | R | F1 |",
