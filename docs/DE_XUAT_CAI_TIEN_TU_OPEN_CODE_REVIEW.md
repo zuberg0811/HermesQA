@@ -195,3 +195,49 @@ Nếu chỉ còn một tuần: làm 1, 2, 3 và phần tối thiểu của 4, 5.
 - Bài báo AACR-Bench: https://arxiv.org/abs/2601.19494 — bộ dữ liệu 200 PR thật, 10 ngôn ngữ, 1.505 lỗi do 80 kỹ sư xác nhận; cách chấm bằng AI giám khảo bỏ phiếu 5 lần; kết quả các mô hình (Claude-4.5-Sonnet agent: precision 39,9%, recall 10,1%, F1 16,1%).
 - Bộ dữ liệu: https://huggingface.co/datasets/Alibaba-Aone/aacr-bench
 - Số liệu HermesQA trích từ `BAO_CAO_TIEN_DO.md` mục 7 (cập nhật 05/10/2026).
+
+---
+
+## 9. Kết quả sau khi triển khai (cập nhật 06/10/2026)
+
+Cả bảy đề xuất đã được viết thành mã và kiểm thử (commit `d2c5a0b`, chỉnh sửa thêm ở `2133adf`; 34 kiểm thử tự động đều đạt). Phần này ghi lại điều đo được, kể cả điều không như mong đợi.
+
+### 9.1. Trên bộ lỗi tiêm (35 PR Python) — số sơ bộ
+
+Chạy với cùng mô hình như trước (`gemini-3.1-flash-lite`) để so sánh công bằng. **Lưu ý:** đây là lần chạy đầu của pipeline mới; sau đó chúng tôi phát hiện lỗi ở bước kiểm tra sự thật (mục 9.3) nên cấu hình `llm` sẽ được chạy lại; số dưới đây có thể thay đổi vài điểm.
+
+| Cấu hình | Trước (F1) | Sau (F1) | Báo động giả (FP) |
+|---|---|---|---|
+| Chỉ AI, có kiểm chứng | 70,1% | 86,5% | 27 → 6 |
+| Chỉ AI, không kiểm chứng | 69,4% | 90,7% | 28 → 5 |
+| Bộ đa ngôn ngữ (18 PR), chỉ AI | 73,5% | 87,8% | 13 → 5 |
+
+Giải thích cho người không chuyên: điểm tăng chủ yếu vì **danh sách "Không báo"** (đề xuất 3) — AI thôi nhận xét những thứ đúng-nhưng-vô-ích ("thiếu docstring", "nên thêm type hint"...). Đổi lại, chúng tôi phải ghi rõ nguy cơ: danh sách này được viết sau khi đã nhìn thấy bộ lỗi tiêm, nên một phần điểm tăng có thể là "học thuộc đề". Đó chính là lý do phải có mục 9.2.
+
+Việc **ghim nhận xét bằng đoạn code** (đề xuất 1) hoạt động đúng kỹ thuật — 65/65 nhận xét ghim được — nhưng không làm tăng điểm "đúng từng dòng" trên bộ này, vì các PR tiêm lỗi vốn nhỏ và ít lệch dòng. Hiệu quả của nó chỉ thấy được trên PR thật.
+
+### 9.2. Trên PR thật (15 PR mã nguồn mở, 68 vấn đề do kỹ sư xác nhận) — số đã chốt
+
+Dùng tập con Python của AACR-Bench, chấm theo cách của bài báo (AI giám khảo bỏ 3 phiếu, xác nhận "cùng một vấn đề"). Mô hình: `gemini-3.5-flash-lite` (mô hình cũ hết hạn mức trong ngày; thí nghiệm này không cần so với số cũ).
+
+| Cấu hình | Nhận xét đưa ra | Trúng | Precision | Recall | F1 |
+|---|---|---|---|---|---|
+| Chỉ AI | 8 | 1 | 12,5% | 1,5% | 2,6% |
+| AI + công cụ tĩnh (như cũ) | 286 | 2 | 0,7% | 2,9% | 1,1% |
+| AI + công cụ tĩnh, **chỉ giữ cảnh báo trong phạm vi thay đổi** | 43 | 1 | 2,3% | 1,5% | 1,8% |
+
+Ba điều rút ra:
+
+1. **Khoảng cách giữa "đề thi" và "đời thật" là rất lớn.** Trên lỗi tiêm, hệ thống bắt được ~90% vấn đề; trên PR thật chỉ 1,5–3%. Để so sánh, hệ thống tốt nhất trong bài báo AACR-Bench (agent dùng Claude 4.5 Sonnet) cũng chỉ đạt recall 10,1%. Con số của chúng tôi thấp hơn vì AI gần như **im lặng** trên code thật: 15 PR chỉ sinh 8 nhận xét, không phải vì bị bộ lọc chặn (bước kiểm tra sự thật không loại nhận xét nào) mà vì mô hình nhỏ cộng với danh sách "Không báo" khiến nó quá dè dặt. Đây là điểm cần nói thẳng trong báo cáo thay vì chỉ trình bày con số 86–90%.
+2. **Công cụ tĩnh trên repo thật chủ yếu báo về code không hề thay đổi.** 240/275 cảnh báo tĩnh nằm ngoài phần sửa của PR. Chúng vừa làm phiền người đọc, vừa không gửi được (GitHub không cho đặt comment review lên dòng ngoài phạm vi thay đổi). Chúng tôi đã thêm bộ lọc "chỉ trong phạm vi thay đổi": số cảnh báo giảm 286 → 43, mất đúng 1 lần trúng (vốn cũng không đăng được).
+3. **Chuẩn bị dữ liệu thật dễ sai hơn tưởng.** Lần chạy đầu, chúng tôi hiểu ngược hai trường commit của AACR-Bench (tên trường `pr_source_commit` thực ra là nhánh đích), nên hệ thống đã review diff *đảo chiều* hoặc kèm hàng nghìn dòng không thuộc PR. Phát hiện nhờ đối chiếu số dòng với dữ liệu gốc và GitHub API; toàn bộ lần chạy đó bị bỏ. Bài học: luôn kiểm tra kích thước diff trước khi tin kết quả.
+
+### 9.3. Lỗi tìm thấy nhờ đo đạc và đã sửa
+
+- **Kiểm tra sự thật "lý luận vòng".** AI giám khảo từng loại 4 nhận xét *đúng* với lý do "code đã xử lý rồi", nhưng "bằng chứng" nó dẫn chính là dòng đang bị báo lỗi (ví dụ nhận xét "dùng `== None`" bị loại với bằng chứng `if user == None:`). Nay phần mềm bác mọi bằng chứng trùng dòng bị báo — căn cứ B phải là một dòng **khác** đã xử lý vấn đề.
+- **Hạn mức theo phút và JSON hỏng.** Trên PR thật, mô hình trả về JSON có xuống dòng thật hoặc thiếu dấu phẩy (~1/15 PR), và dịch vụ giới hạn 15 lượt/phút. Hệ thống nay chấp nhận xuống dòng trong chuỗi, gọi lại một lần khi JSON hỏng, và tự đợi đúng thời gian được báo khi bị giới hạn.
+
+### 9.4. Việc còn lại
+
+- Chạy lại cấu hình `llm` và `both` trên hai bộ lỗi tiêm với bản sửa 9.3 (chờ hạn mức ngày của mô hình), chấm ở độ lệch 0 dòng, và chạy giám khảo phân loại báo động giả (đề xuất 7) — nên dùng một mô hình khác làm giám khảo để tránh "tự khen".
+- Thử mô hình mạnh hơn trên bộ PR thật để biết phần "im lặng" đến từ mô hình hay từ lời nhắc.
