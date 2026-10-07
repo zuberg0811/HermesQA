@@ -260,6 +260,24 @@ def test_static_findings_outside_diff_hunks_are_dropped():
         assert re.search(r"static = scope_static_to_diff\(", open(src, encoding="utf-8").read()), src
 
 
+def test_dedupe_clusters_all_static_findings_on_the_same_line():
+    # bộ Python v3: hadolint DL3004 (devops, high) + semgrep no-sudo-in-dockerfile (security, medium) cùng Dockerfile:4
+    a = _f(line=4, source="hadolint", cat="devops", sev="high", title="DL3004")
+    b = _f(line=4, source="semgrep", cat="security", sev="medium", title="no-sudo-in-dockerfile")
+    c = _f(line=4, source="semgrep", cat="bug", sev="low", title="missing-pip-no-cache-dir")   # cùng tool, luật khác
+    d = _f(line=1, source="semgrep", cat="bug", sev="low", title="dockerfile-source-not-pinned")  # dòng khác
+    for x in (a, b, c, d):
+        x.file = "Dockerfile"
+    out = postprocess.dedupe([a, b, c, d])
+    assert [x.title for x in out] == ["DL3004", "dockerfile-source-not-pinned"]
+    assert "no-sudo-in-dockerfile" in out[0].explanation and "missing-pip-no-cache-dir" in out[0].explanation
+    assert out[0].severity == "high"                                # cụm lấy nhãn của finding nặng nhất
+    # lệch 1 dòng thì KHÔNG gộp chéo công cụ (chỉ gộp khi đúng cùng dòng)
+    e = _f(line=5, source="semgrep", cat="security", sev="medium", title="khác dòng")
+    e.file = "Dockerfile"
+    assert len(postprocess.dedupe([a, e])) == 2
+
+
 def test_run_json_retries_once_on_broken_json():
     from app.review.agent import _JsonBackend
 
@@ -269,10 +287,12 @@ def test_run_json_retries_once_on_broken_json():
 
         def complete(self, role, user_prompt, system=None):
             self.calls += 1
+            self.last_prompt = user_prompt
             return self.replies.pop(0)
 
     b = Flaky(['{"summary": "x" "findings": []}', '{"summary": "ok", "findings": []}'])   # thiếu dấu phẩy rồi tốt
     assert b.run_json("SE", "p")["summary"] == "ok" and b.calls == 2
+    assert b.last_prompt.startswith("p") and "KHÔNG phải JSON hợp lệ" in b.last_prompt   # lần hai nói rõ lỗi
     b = Flaky(['{"a": ', '{"a": '])                                                      # hỏng hai lần -> lỗi thật
     with pytest.raises(Exception):
         b.run_json("SE", "p")

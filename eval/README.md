@@ -57,6 +57,9 @@ python eval/score.py --out eval/out-v2
 | `eval/out-multi` / `eval/out-multi-v2` | Bộ đa ngôn ngữ, thô / rescore |
 | `eval/out-noise` | Lần chạy `llm` thứ hai y hệt cấu hình, để đo dao động giữa hai lần chạy LLM |
 | `eval/out-both-v2` / `eval/out-both-v2-fixed` | Chạy lại thật `both` ngày 05/10 với dedupe mới; bản `-fixed` là rescore sau khi nối bộ lọc B101 vào `collect()` (bug D3) |
+| `eval/out-v3` / `eval/out-multi-v3` | Pipeline MỚI (7 đề xuất OCR), chạy thật 07/10 bằng gemini-3.1-flash-lite: `llm`, `both`, `llm_noverify`, `llm_legacyverify`; kèm `results_tol0.md` và `fp_judgement_<config>.md` |
+| `eval/out-v3-rescored` | `eval/out-v3` sau khi rescore với quy tắc gộp "mọi finding static cùng dòng là một cụm" (sửa sau khi đọc FP của `both`) — số `both` chính thức lấy ở đây |
+| `eval/aacr/out` | Pilot PR thật (AACR-Bench, 15 PR Python), gemini-3.5-flash-lite: `llm`, `both`, `both_hunk` (lọc static theo hunk, áp offline) — `results.md` |
 
 ## Ghi chú phương pháp
 - `run_eval.py` đặt `MIN_SEVERITY_TO_COMMENT=low` và `MIN_CONFIDENCE=0.0` cho tiến trình con

@@ -138,11 +138,16 @@ class _JsonBackend:
     def run_json(self, role: str, user_prompt: str, system: str | None = None) -> dict:
         # JSON hỏng (thiếu dấu phẩy, ngoặc kép chưa escape) là lỗi ngẫu nhiên của model ~1/15 PR thật:
         # gọi lại đúng một lần trước khi coi là vai thất bại.
+        text = self.complete(role, user_prompt, system)
         try:
-            return _extract_json(self.complete(role, user_prompt, system))
+            return _extract_json(text)
         except (json.JSONDecodeError, ValueError) as e:
-            log.warning("[%s] JSON hỏng (%s), gọi lại một lần", role, e)
-            return _extract_json(self.complete(role, user_prompt, system))
+            pos = getattr(e, "pos", 0) or 0
+            log.warning("[%s] JSON hỏng (%s) quanh: %r — gọi lại một lần", role, e, text[max(0, pos - 80):pos + 80])
+            # Lần hai nói rõ lỗi: cùng prompt thường cho cùng JSON hỏng (vd dấu nháy kép trong chuỗi chưa escape)
+            hint = (f"\n\nLƯU Ý: lần trả lời trước KHÔNG phải JSON hợp lệ ({e}). Trả về lại toàn bộ kết quả dưới dạng "
+                    "JSON hợp lệ: escape mọi dấu nháy kép (\\\") và xuống dòng (\\n) bên trong chuỗi, không thêm chữ ngoài JSON.")
+            return _extract_json(self.complete(role, user_prompt + hint, system))
 
     def run(self, role: str, user_prompt: str) -> AgentOutput:
         return parse_output(self.run_json(role, user_prompt))

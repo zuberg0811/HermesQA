@@ -63,6 +63,13 @@ def _is_duplicate(kept: Finding, new: Finding) -> bool:
         return False
     if kept.category == new.category:
         return True
+    if not _is_llm(kept) and not _is_llm(new):
+        # Mọi finding static trên ĐÚNG cùng một dòng là một cụm: hai công cụ chỉ cùng một dòng gần như
+        # luôn là cùng một lỗi với hai nhãn (hadolint DL3004 "devops" vs semgrep no-sudo "security" — đo
+        # được 7 FP kiểu này trên bộ Python), và người đọc muốn một comment mỗi dòng, các luật khác đính kèm.
+        # Hạn chế: nhãn category/severity của cụm lấy theo finding chính (nặng nhất); các nhãn còn lại
+        # chỉ còn trong phần đính kèm.
+        return kept.file == new.file and kept.line == new.line
     if _is_llm(kept) == _is_llm(new):
         return False
     return SEVERITY_RANK[new.severity] <= SEVERITY_RANK[kept.severity]
