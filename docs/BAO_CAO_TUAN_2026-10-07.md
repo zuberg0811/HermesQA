@@ -1,160 +1,177 @@
-# HermesQA — Báo cáo tiến độ tuần 30/09 → 07/10/2026
+# HermesQA — Báo cáo tuần 30/09 → 07/10/2026
 
-**Người thực hiện:** Phí Thành Dương · **Kỳ báo cáo:** 30/09/2026 – 07/10/2026 · **Mã nguồn:** github.com/zuberg0811/HermesQA (nhánh `main`, commit `a881536`)
-
----
-
-## 1. Tóm tắt một trang
-
-Tuần này tập trung vào ba việc: (1) **đo lại trung thực** cấu hình kết hợp static + AI vốn trước đây chỉ có số chấm lại offline; (2) **khảo sát Open Code Review của Alibaba** — công cụ cùng bài toán, mở mã nguồn năm 2026 — rút ra 7 đề xuất và **triển khai cả 7**; (3) **thử lần đầu trên pull request thật** (AACR-Bench) thay vì chỉ trên lỗi tự tiêm.
-
-Kết quả chính:
-
-| Chỉ số (bộ Python, 35 PR) | Đầu kỳ | Cuối kỳ |
-|---|---|---|
-| F1 cấu hình chỉ AI (`llm`) | 70,1 % | **89,5 %** |
-| F1 cấu hình kết hợp (`both`, mặc định sản phẩm) | 53,0 % (chấm lại) | **87,2 %** (chạy thật) |
-| Báo động giả của `llm` / `both` | 27 / 61 | 6 / 8 |
-| Nhận xét ghim đúng dòng (`llm`, độ lệch 0) | 33/34 | 34/34 |
-| F1 trên 15 PR thật (AACR-Bench) | chưa đo | 1,1 – 2,6 % |
-
-Con số cuối cùng là phát hiện quan trọng nhất của tuần: trên code thật, hệ thống gần như im lặng. Điểm 89,5 % phải đọc là "trên bộ đề tự tạo", không phải năng lực thực tế. Báo cáo tiến độ chính (`BAO_CAO_TIEN_DO.md`, 21 trang) đã ghi điều này thành hạn chế rõ ràng.
-
-Khối lượng: 9 commit, 43 file thay đổi (+3 118 / −216 dòng), 35 kiểm thử tự động đều đạt; 1 280 dòng trong `app/`, 615 dòng công cụ đo trong `eval/`, 524 dòng test.
+**Sinh viên:** Phí Thành Dương · **Kỳ báo cáo:** 30/09 – 07/10/2026 · **Mã nguồn:** github.com/zuberg0811/HermesQA (nhánh `main`)
 
 ---
 
-## 2. Diễn biến theo ngày
+## 1. Tuần này nói ngắn gọn
 
-### 05/10 — Đo lại và sửa bước gộp (commit `5b6449a`, `057fead`)
+Tuần trước tôi dừng lại ở một con số không thoải mái: cấu hình "kết hợp công cụ tĩnh với AI" — vốn là ý tưởng chính của đồ án — chỉ đạt F1 53 %, thua xa cấu hình chỉ dùng AI. Số đó lại còn là số chấm lại offline, chưa phải chạy thật. Tuần này tôi đặt mục tiêu làm ba việc: chạy thật để biết sự thật, đi học xem người ta làm thế nào, và thử hệ thống trên pull request thật thay vì trên bộ lỗi tự tiêm.
 
-- Chạy lại thật cấu hình `both` trên 35 PR (trước đó chỉ có số chấm lại offline). Phát hiện **bug D3**: bộ lọc nhiễu bandit B101 có test riêng nhưng chưa bao giờ được gọi trong `collect()` — 11 báo động giả lọt qua. Bài học ghi vào báo cáo: *test từng hàm lẻ không chứng minh hàm được gọi; test phải đi qua đúng đường gọi thật*.
-- Sửa quy tắc gộp static/AI: static hấp thụ nhận xét AI cùng vị trí nếu AI không chấm nặng hơn; hai vai AI chỉ gộp khi cùng loại lỗi. Hai cách thử trước đều mất 2–3 lỗi thật và bị loại.
-- Thêm backend Anthropic (SDK chính thức) sẵn sàng khi có khóa; chưa dùng.
-- Số chốt pipeline cũ: `llm` 70,1 % · `both` 66,0 % · đa ngôn ngữ 73,5 / 72,0 %.
+Kết quả tóm tắt: F1 của cấu hình kết hợp lên **87,2 %** (chạy thật), cấu hình chỉ AI lên **89,5 %**, số báo động giả giảm bốn đến năm lần. Nhưng phát hiện đáng giá nhất lại là một con số xấu: trên 15 pull request thật, hệ thống chỉ bắt được **1–2 trong 68 vấn đề** mà kỹ sư đã xác nhận. Nói cách khác, bộ đề tự tạo của tôi dễ hơn đời thật rất nhiều, và báo cáo cuối cùng sẽ phải nói thẳng điều này.
 
-### 05/10 — Khảo sát Open Code Review và triển khai 7 đề xuất (commit `d2c5a0b`)
+Khối lượng: 9 commit, 43 file thay đổi (+3 118 / −216 dòng), 35 kiểm thử tự động đều đạt. Mọi tài liệu (báo cáo tiến độ 21 trang, đề xuất cải tiến 9 trang, trang tổng quan) đã cập nhật và đẩy lên GitHub.
 
-Chi tiết khảo sát ở mục 3. Bảy đề xuất đã viết thành mã trong cùng ngày:
+---
 
-| # | Đề xuất | Hiện thực trong HermesQA |
-|---|---|---|
-| 1 | Ghim nhận xét bằng **đoạn code** thay vì số dòng | AI phải trả `existing_code`; `diff_utils.resolve_anchor` tìm lại dòng đúng (khớp nguyên văn → bỏ dấu +/− → dòng dài nhất) |
-| 2 | Thay self-verify bằng **kiểm tra sự thật** mặc định giữ | `agent.fact_check`: AI chỉ được loại nhận xét với căn cứ A (code không tồn tại) hoặc B (code đã xử lý ở chỗ khác); phần mềm kiểm lại bằng chứng; lỗi bảo mật/bug nặng được bảo vệ |
-| 3 | Danh sách kiểm tra theo loại file, có mục **"Không báo"** | `app/skills/rules/*.md` cho Python, JS/TS, Go, Java, Dockerfile, deps, CI, test |
-| 4 | **Chia lô** thay vì cắt bớt im lặng | `selection.build_batches` theo ngân sách ký tự; file bị cắt được liệt kê trong phần "Phạm vi review" |
-| 5 | Loại trừ mặc định + **chặn file bí mật** | `.env`, khóa, lockfile, file sinh tự động không bao giờ gửi cho AI; dòng gitleaks đánh dấu được che |
-| 6 | **Dấu vân tay** nhận xét giữa các lần đẩy | `postprocess.fingerprint` (file + loại + nội dung code); bảng `posted_comments`; không đăng lại nhận xét cũ |
-| 7 | Nâng cấp đánh giá | `score.py --tolerance 0`, `judge_fp.py` (giám khảo AI phân loại báo động giả), `aacr_eval.py` (pilot PR thật) |
+## 2. Đã làm gì, theo thứ tự thời gian
 
-Kèm theo: `pipeline.py` dùng chung cho CLI và worker (trước đây hai đường chạy khác nhau), 21 test mới.
+### Chạy thật và tìm ra một lỗi "im lặng" (05/10)
 
-### 06/10 — Đo pipeline mới, sửa theo số đo (commit `2133adf`, `87c12e2`)
+Việc đầu tiên là chạy lại thật cấu hình kết hợp trên 35 PR. Kết quả thật ra tệ hơn số chấm lại: có 11 cảnh báo giả giống hệt nhau, đều là bandit B101 ("dùng `assert` trong code") trong file test — thứ mà tôi *tưởng* đã lọc từ tuần trước. Lần theo thì thấy hàm lọc có test riêng, test chạy xanh, nhưng chưa bao giờ được gọi trong đường chạy thật: lệnh sửa file hôm trước không khớp vì file dùng CRLF, và script không báo lỗi. Tôi gọi đây là bug D3 và rút ra một nguyên tắc ghi vào báo cáo: *test từng hàm lẻ không chứng minh hàm đó được gọi; test phải đi qua đúng đường mà sản phẩm chạy.*
 
-- Hạn mức miễn phí của Gemini (500 lượt/ngày/model) cạn giữa chừng nên bộ Python phải chia sang ngày 07/10. Pilot PR thật chạy bằng model cùng họ (`gemini-3.5-flash-lite`).
-- Đọc dữ liệu trung gian (`_meta`) phát hiện **fact-check lý luận vòng**: AI loại 4 nhận xét *đúng* với "bằng chứng" chính là dòng bị báo lỗi. Thêm ràng buộc cơ học: bằng chứng căn cứ B phải là dòng khác dòng bị báo.
-- Pilot PR thật lần đầu chạy **sai dữ liệu**: hiểu ngược hai trường commit của AACR-Bench (`pr_source_commit` thực ra là nhánh đích) nên review diff đảo chiều hoặc kèm hàng nghìn dòng không thuộc PR. Phát hiện nhờ đối chiếu số dòng với dataset và GitHub API; bỏ toàn bộ lần chạy đó, sửa lấy diff `base...head`.
-- Phát hiện **240/275 cảnh báo static trên PR thật nằm ngoài phần sửa** (GitHub cũng không cho đăng comment ở đó) → thêm bộ lọc "chỉ trong phạm vi thay đổi" vào cả CLI lẫn worker.
-- Bền vững hơn với API: chấp nhận JSON có xuống dòng thật, gọi lại khi JSON hỏng, tự đợi khi gặp hạn mức theo phút.
+Cùng ngày tôi sửa lại quy tắc gộp nhận xét giữa công cụ tĩnh và AI. Hai cách thử đầu đều làm mất 2–3 lỗi thật (gộp theo vị trí bất kể nguồn thì gộp nhầm hai vai AI; để nhận xét nặng hơn làm chính thì AI tự chấm "thiếu test" là lỗi nặng và đè lên cảnh báo tĩnh). Cách giữ lại: công cụ tĩnh hấp thụ nhận xét AI cùng chỗ *nếu* AI không chấm nặng hơn; hai vai AI chỉ gộp khi cùng loại lỗi. Số chốt cho pipeline cũ sau bước này: chỉ AI 70,1 %, kết hợp 66,0 %.
 
-### 07/10 — Chạy lại đủ, chốt số, cập nhật tài liệu (commit `8e87c2e`, `869687c`, `a881536`)
+### Đi học Alibaba (05/10)
 
-- Chạy lại toàn bộ 4 cấu hình bộ Python và 2 cấu hình đa ngôn ngữ với cùng model cũ (`gemini-3.1-flash-lite`) để so sánh công bằng; ~420 lượt gọi.
-- Đọc 15 báo động giả của `both`: 7 cái là **hai công cụ static báo cùng một lỗi ở cùng dòng** với hai nhãn khác nhau → gộp mọi cảnh báo static cùng dòng thành một comment. F1 `both` 81,4 → 87,2 %, đổi lại mất 1 lỗi thật vì nhãn của cụm lấy theo cảnh báo chính (đã ghi là hạn chế).
-- Giám khảo AI phân loại báo động giả (model khác model sinh, 3 phiếu): Python 20/20 là nhận xét đúng ngoài đáp án; đa ngôn ngữ 5/6 đúng, **1 bịa** (4 % tổng nhận xét).
-- Cập nhật `BAO_CAO_TIEN_DO.md` (nhóm E, bảng 7.6), tài liệu đề xuất (mục 9 kết quả), trang tổng quan; thêm `tools/md2pdf.py` để mọi PDF cùng định dạng.
+Tôi đọc kỹ Open Code Review — công cụ review PR bằng AI mà Alibaba dùng nội bộ hai năm rồi mở mã nguồn đầu năm nay — cùng bài báo và bộ dữ liệu AACR-Bench đi kèm. Chi tiết ở mục 3. Kết quả là một tài liệu đề xuất 7 cải tiến (có bản dành cho người không chuyên) và, vì thầy đã đồng ý, tôi triển khai cả 7 ngay trong ngày (mục 4).
+
+### Đo pipeline mới, và bị số liệu dạy cho vài bài (06/10)
+
+Hạn mức miễn phí của Gemini (500 lượt/ngày cho mỗi model) cạn giữa chừng nên việc đo phải kéo sang hôm sau. Trong lúc chờ, tôi đọc dữ liệu trung gian của những case đã chạy và thấy ba chuyện:
+
+- **Bước kiểm tra sự thật loại nhầm nhận xét đúng.** AI giám khảo bác bỏ "dùng `== None` thay vì `is None`" với lý do "code đã xử lý rồi", và bằng chứng nó dẫn ra là… chính dòng `if user == None:`. Lý luận vòng. Tôi thêm một ràng buộc cơ học: bằng chứng "đã xử lý ở chỗ khác" phải là một dòng *khác* dòng bị báo. Sau sửa, bước này không loại nhầm lần nào nữa.
+- **Pilot trên PR thật chạy sai dữ liệu.** Bộ AACR-Bench đặt tên trường ngược với trực giác: `pr_source_commit` hóa ra là nhánh đích, không phải nhánh PR. Lần chạy đầu vì thế review diff đảo chiều, có PR 22 dòng mà diff lên tới 153 000 dòng. Tôi phát hiện khi so số dòng với dataset và hỏi lại GitHub API; bỏ toàn bộ lần chạy đó, sửa cách lấy diff, kiểm tra 68/68 vấn đề chuẩn đều nằm trong diff mới rồi mới chạy lại.
+- **Công cụ tĩnh trên repo thật nói về những dòng không ai sửa.** 240 trong 275 cảnh báo tĩnh nằm ngoài phần thay đổi của PR — vừa gây nhiễu, vừa không đăng được vì GitHub không cho comment ngoài hunk. Thêm bộ lọc "chỉ trong phạm vi thay đổi" vào cả CLI lẫn worker.
+
+### Chốt số và viết lại tài liệu (07/10)
+
+Chạy lại đủ bốn cấu hình bộ Python và hai cấu hình bộ đa ngôn ngữ với đúng model cũ để so sánh công bằng. Khi rà 15 cảnh báo giả còn lại của cấu hình kết hợp, 7 cái là hai công cụ (hadolint và semgrep) cùng báo một lỗi ở cùng một dòng nhưng gắn hai nhãn khác nhau nên không được gộp. Tôi đổi quy tắc: mọi cảnh báo tĩnh trên cùng một dòng là một comment, các luật khác đính kèm bên dưới. F1 kết hợp tăng 81,4 → 87,2 %; cái giá là mất một lỗi thật vì nhãn của cụm lấy theo cảnh báo chính — tôi ghi rõ đây là đánh đổi, không phải cải thiện thuần.
+
+Cuối ngày: chạy giám khảo AI phân loại báo động giả, cập nhật báo cáo tiến độ, tài liệu đề xuất và trang tổng quan, thêm `tools/md2pdf.py` để mọi file PDF của đồ án cùng một định dạng.
 
 ---
 
 ## 3. Nghiên cứu giải pháp của Alibaba: Open Code Review
 
-**Là gì:** công cụ review pull request bằng AI do Alibaba dùng nội bộ hai năm, mở mã nguồn năm 2026 (Go, Apache-2.0, hơn 43 000 sao GitHub). Đi kèm bài báo và bộ dữ liệu **AACR-Bench**: 200 PR thật, 10 ngôn ngữ, 1 505 lỗi do 80 kỹ sư xác nhận. Đã đọc toàn bộ phần chọn file, định vị nhận xét, lời nhắc, bộ lọc, luật theo ngôn ngữ, và bài báo.
+**Nó là gì.** Open Code Review (OCR) là công cụ review pull request bằng AI, viết bằng Go, giấy phép Apache-2.0, hơn 43 000 sao trên GitHub. Alibaba dùng nội bộ hai năm trước khi mở mã. Đi kèm là bài báo và AACR-Bench — 200 PR thật từ các dự án mã nguồn mở, 10 ngôn ngữ, 1 505 vấn đề do 80 kỹ sư xác nhận bằng tay. Tôi đã đọc phần chọn file, định vị nhận xét, toàn bộ lời nhắc, luật theo ngôn ngữ, bộ lọc kết quả, và bài báo.
 
-### Điểm mạnh (và HermesQA đã học gì)
+### Họ làm tốt điều gì
 
-| Điểm mạnh của OCR | Vì sao quan trọng | HermesQA |
-|---|---|---|
-| **Định vị nhận xét bằng đoạn code** (`existing_code`) rồi dò lại vị trí bằng cửa sổ trượt | Số dòng do AI đọc rất hay sai; đoạn code thì không | Đã làm (đề xuất 1): 100 % nhận xét ghim được, đúng dòng |
-| **Bộ lọc "fact-checker"** mặc định *giữ*, chỉ loại khi có căn cứ cụ thể, bảo vệ nhóm lỗi nặng | Self-verify kiểu "viết lại cho đúng" làm mất lỗi thật — chúng tôi đo được điều này | Đã làm (đề xuất 2), có thêm kiểm chứng cơ học mà OCR không có |
-| **Luật theo ngôn ngữ kèm "Do not report"** | Giảm nhận xét đúng-nhưng-vô-ích — nguồn FP lớn nhất | Đã làm (đề xuất 3): FP giảm 4–5 lần |
-| **Chọn file tất định** (6 cổng, loại trừ mặc định, đường dẫn bí mật), gom file có liên quan vào cùng một lượt | Không gửi bí mật cho AI; AI thấy đủ ngữ cảnh | Đã làm (đề xuất 4, 5) |
-| **Đánh giá trên PR thật** với giám khảo AI bỏ phiếu | Lỗi tự tiêm quá dễ; số liệu thật mới có ý nghĩa | Đã làm pilot 15 PR (đề xuất 7) — và nó cho thấy khoảng cách lớn |
-| Vận hành chín muồi: GitHub Action một dòng, nén bộ nhớ vòng lặp AI, nhiều nhà cung cấp model | Đã dùng thật ở quy mô lớn | Chưa cần ở giai đoạn đồ án |
+Điều tôi ấn tượng nhất không phải lời nhắc hay model, mà là họ **không tin AI ở những chỗ không cần tin**:
 
-### Điểm yếu / khác biệt (và HermesQA giữ gì của riêng mình)
+- *Định vị nhận xét bằng đoạn code chứ không bằng số dòng.* AI phải chép lại nguyên văn dòng code nó đang nói đến; phần mềm tự tìm dòng đó trong diff. Số dòng do AI đếm sai liên tục, đoạn code thì gần như không.
+- *Bộ lọc kiểm tra sự thật mặc định "giữ".* Thay vì bắt AI viết lại toàn bộ nhận xét cho "chuẩn hơn" (cách tôi làm trước đây và đo được là có hại), họ chỉ cho phép loại bỏ khi có một trong hai căn cứ cụ thể, và không bao giờ loại lỗi bảo mật nặng.
+- *Luật theo ngôn ngữ kèm mục "Do not report".* Danh sách những thứ đúng nhưng vô ích mà AI rất thích nói ("nên thêm docstring", "nên có type hint"). Đây là nguồn báo động giả lớn nhất của tôi.
+- *Chọn file tất định.* Sáu cổng lọc, danh sách loại trừ mặc định, đường dẫn bí mật không bao giờ gửi cho AI; file liên quan gom vào cùng một lượt để AI có đủ ngữ cảnh.
+- *Đánh giá trên PR thật* bằng giám khảo AI bỏ phiếu — và họ công bố cả số xấu: agent tốt nhất của họ (Claude 4.5 Sonnet) chỉ đạt precision 39,9 %, recall 10,1 %.
 
-| Điểm yếu của OCR | Nhận định | HermesQA |
-|---|---|---|
-| **Không có công cụ static** — hoàn toàn dựa vào AI | Lỗi bảo mật kinh điển (SQL injection, secret, shell=True) có thể bắt bằng luật tất định, rẻ và không bịa | Giữ 5 công cụ static trong sandbox cách ly; static ngang AI ở nhóm bảo mật (12/13) |
-| **Recall thấp ngay cả với model mạnh**: Claude 4.5 Sonnet agent chỉ P 39,9 / R 10,1 / F1 16,1 trên AACR-Bench | Bài toán review PR thật khó hơn nhiều so với benchmark lỗi tiêm; không công cụ nào "giải xong" | Số pilot của chúng tôi (R 1,5–3 %) càng thấp hơn vì model nhỏ; cần model mạnh hơn mới so được |
-| **Phụ thuộc hoàn toàn vào chất lượng model** và lời nhắc dài; không có lớp kiểm chứng cơ học | Fact-checker của OCR cũng là AI, tự kiểm AI | HermesQA kiểm lại bằng chứng bằng phần mềm (bằng chứng phải tồn tại trong diff, không được là chính dòng bị báo) — đo được nó chặn 4 lần loại sai |
-| **Không có sandbox**; agent có công cụ đọc file tự do | Phù hợp nội bộ Alibaba, rủi ro khi chạy mã lạ | Giữ sandbox Docker không mạng, chỉ đọc |
-| Một vai duy nhất | Đơn giản, nhưng bỏ sót góc nhìn test/DevOps | Giữ ba vai SE / QA / DevOps theo loại file |
-| Benchmark của họ là tự xây, tự chấm bằng AI | Có thiên vị "đồng ý với chính mình" (chúng tôi gặp đúng điều này với giám khảo nhỏ) | Ghi rõ trong hạn chế; nên dùng model khác họ làm giám khảo |
+### Họ yếu ở đâu, hoặc khác tôi ở đâu
 
-**Kết luận của khảo sát:** OCR giải tốt phần *định vị, lọc và vận hành*; HermesQA học phần đó và giữ phần *lai static + sandbox + nhiều vai* làm điểm khác biệt. Điều cả hai bên cùng chứng minh: trên PR thật, AI review còn xa mức "thay người".
+- **Không có công cụ tĩnh.** Toàn bộ dựa vào AI, kể cả những lỗi mà một luật tất định bắt được rẻ hơn, nhanh hơn và không bao giờ bịa (SQL injection ghép chuỗi, khóa API lộ, `shell=True`). Trong bộ đo của tôi, công cụ tĩnh bắt được 12/13 lỗi bảo mật — ngang AI — với chi phí token bằng không.
+- **Không có lớp kiểm chứng cơ học.** Bộ lọc kiểm tra sự thật của họ cũng là AI; AI tự kiểm AI. Tôi gặp đúng rủi ro đó (lý luận vòng ở trên) và phải thêm phần mềm đối chiếu bằng chứng.
+- **Không có sandbox.** Agent của họ có công cụ đọc file tự do — hợp lý trong nội bộ Alibaba, nhưng tôi không muốn chạy mã lạ từ một PR công khai theo cách đó. HermesQA giữ container Docker không mạng, chỉ đọc.
+- **Một vai duy nhất.** Đơn giản, nhưng bỏ sót góc nhìn kiểm thử và DevOps; ba vai SE/QA/DevOps của tôi bắt được nhóm lỗi test 4/4 mà công cụ tĩnh bắt 0/4.
+- **Recall thấp ngay cả với model mạnh.** Đây không hẳn là điểm yếu riêng của họ mà là thực tế của bài toán: review PR thật khó hơn mọi benchmark tự tạo. Số pilot của tôi còn thấp hơn (recall 1,5–3 %) vì dùng model nhỏ.
+- **Benchmark tự xây, tự chấm bằng AI** — có thiên vị "đồng ý với chính mình". Tôi gặp lại điều này khi dùng giám khảo nhỏ (mục 5).
+
+**Nhận định chung:** OCR giải rất tốt phần *định vị, lọc và vận hành*; tôi học phần đó. Phần *lai công cụ tĩnh + sandbox + nhiều vai* là thứ họ không có và tôi giữ làm điểm khác biệt của đồ án. Điều cả hai bên cùng chứng minh: trên PR thật, AI review còn xa mức thay được người.
 
 ---
 
-## 4. Số liệu chi tiết cuối kỳ
+## 4. Đề xuất cải tiến hệ thống học từ Alibaba — và kết quả sau khi làm
 
-Bộ Python, 35 PR, 36 lỗi; model `gemini-3.1-flash-lite`. "Đúng dòng" = chấm ở độ lệch 0 dòng.
+Bảy đề xuất đã nêu với thầy, nay đều đã triển khai (commit `d2c5a0b`, chỉnh thêm ở `2133adf`, `8e87c2e`). Tôi ghi lại từng cái với kết quả đo được, kể cả cái chưa thấy lợi.
 
-| Cấu hình | TP | FP | FN | Precision | Recall | F1 | F1 đúng dòng | Giây / token mỗi PR |
-|---|---|---|---|---|---|---|---|---|
-| `static` (chấm lại lần chạy gốc) | 21 | 9 | 15 | 70,0 % | 58,3 % | 63,6 % | 54,5 % | 101 s · 0 |
-| `llm` — kiểm tra sự thật | 34 | 6 | 2 | 85,0 % | 94,4 % | **89,5 %** | 89,5 % | 18,5 s · 6 355 |
-| `llm_noverify` | 34 | 6 | 2 | 85,0 % | 94,4 % | 89,5 % | 89,5 % | 12,2 s · 4 532 |
-| `llm_legacyverify` (self-verify cũ) | 33 | 11 | 3 | 75,0 % | 91,7 % | 82,5 % | 82,5 % | 18,6 s · 8 656 |
-| `both` — mặc định sản phẩm | 34 | 8 | 2 | 81,0 % | 94,4 % | **87,2 %** | 76,9 % | 118 s · 6 551 |
+| # | Đề xuất | Đã làm thế nào | Kết quả đo được |
+|---|---|---|---|
+| 1 | Ghim nhận xét bằng đoạn code | AI phải trả `existing_code`; phần mềm tìm lại dòng (khớp nguyên văn → bỏ dấu +/− → dòng dài nhất, ưu tiên dòng mới thêm) | 39/39 nhận xét ghim được; F1 ở độ lệch 0 dòng bằng đúng độ lệch 3 dòng (trước mất 1) |
+| 2 | Kiểm tra sự thật thay self-verify | AI chỉ được loại với căn cứ A (code không tồn tại) hoặc B (đã xử lý ở dòng khác); phần mềm kiểm bằng chứng; lỗi nặng được bảo vệ | Không mất lỗi thật nào (self-verify cũ mất 1 và thêm 5 báo giả). Nhưng cũng chưa loại được báo giả nào và tốn thêm 40 % token — *an toàn, chưa chứng minh được lợi ích với model nhỏ* |
+| 3 | Danh sách kiểm tra theo loại file, có mục "Không báo" | 9 file luật cho Python, JS/TS, Go, Java, Dockerfile, deps, CI, test | Đóng góp lớn nhất: báo động giả 27 → 6 (chỉ AI), 61 → 8 (kết hợp). Rủi ro: luật viết sau khi đã thấy bộ đề |
+| 4 | Chia lô thay vì cắt bớt im lặng | Chia file theo ngân sách ký tự; file bị cắt liệt kê trong phần "Phạm vi review" | Chưa có case nào trong bộ đo chạm ngưỡng; có tác dụng trên PR thật (file 141 000 ký tự được báo rõ) |
+| 5 | Loại trừ mặc định, chặn file bí mật | `.env`, khóa, lockfile, file sinh tự động không gửi cho AI; dòng gitleaks đánh dấu được che | Hoạt động đúng trên PR thật (3 lockfile bị bỏ qua, có ghi lý do) |
+| 6 | Dấu vân tay nhận xét | Băm file + loại + nội dung code; bảng `posted_comments`; không đăng lại khi đẩy commit mới | Có test; chưa đo được trên GitHub thật vì chưa có credential |
+| 7 | Nâng cấp cách đánh giá | Chấm ở độ lệch 0 dòng; giám khảo AI phân loại báo động giả; pilot trên PR thật | Chính ba công cụ này tìm ra các vấn đề ở mục 2 |
 
-Bộ đa ngôn ngữ (18 PR): `llm` 85,7 % (trước 73,5), `both` 81,8 % (trước 72,0), recall 100 %.
+Ngoài bảy đề xuất, tuần này phát sinh thêm hai cải tiến từ số đo: lọc cảnh báo tĩnh theo phạm vi thay đổi, và gộp cảnh báo tĩnh cùng dòng (đều ở mục 2).
 
-PR thật (AACR-Bench, 15 PR Python ≤ 210 dòng, 68 vấn đề; model `gemini-3.5-flash-lite`):
+**Những gì tôi cố tình không học theo:** bỏ công cụ tĩnh (lý do ở mục 3), cho AI công cụ đọc file tự do không sandbox, và gộp ba vai thành một. Tôi cũng không bê nguyên lời nhắc dài của họ; chỉ lấy cấu trúc "Báo / Không báo".
 
-| Cấu hình | Nhận xét | Trúng | Precision | Recall | F1 |
+---
+
+## 5. Số liệu cuối kỳ
+
+Bộ Python 35 PR, 36 lỗi tiêm; model `gemini-3.1-flash-lite` cho cả trước và sau để so sánh công bằng. "Đúng dòng" là chấm ở độ lệch 0.
+
+| Cấu hình | TP | FP | FN | Precision | Recall | F1 trước | F1 sau | Đúng dòng | Giây · token / PR |
+|---|---|---|---|---|---|---|---|---|---|
+| Chỉ công cụ tĩnh | 21 | 9 | 15 | 70,0 % | 58,3 % | 62,2 % | 63,6 % | 54,5 % | 101 · 0 |
+| Chỉ AI, kiểm tra sự thật | 34 | 6 | 2 | 85,0 % | 94,4 % | 70,1 % | **89,5 %** | 89,5 % | 18,5 · 6 355 |
+| Chỉ AI, không kiểm chứng | 34 | 6 | 2 | 85,0 % | 94,4 % | 69,4 % | 89,5 % | 89,5 % | 12,2 · 4 532 |
+| Chỉ AI, self-verify cũ | 33 | 11 | 3 | 75,0 % | 91,7 % | 70,1 % | 82,5 % | 82,5 % | 18,6 · 8 656 |
+| Kết hợp (mặc định sản phẩm) | 34 | 8 | 2 | 81,0 % | 94,4 % | 66,0 % | **87,2 %** | 76,9 % | 118 · 6 551 |
+
+Bộ đa ngôn ngữ 18 PR: chỉ AI 85,7 % (trước 73,5), kết hợp 81,8 % (trước 72,0), recall 100 % cả hai.
+
+PR thật — AACR-Bench, 15 PR Python dưới 210 dòng, 68 vấn đề do kỹ sư xác nhận, model `gemini-3.5-flash-lite`, giám khảo 3 phiếu:
+
+| Cấu hình | Nhận xét đưa ra | Trúng | Precision | Recall | F1 |
 |---|---|---|---|---|---|
-| `llm` | 8 | 1 | 12,5 % | 1,5 % | 2,6 % |
-| `both` như cũ | 286 | 2 | 0,7 % | 2,9 % | 1,1 % |
-| `both`, chỉ giữ cảnh báo trong phạm vi thay đổi | 43 | 1 | 2,3 % | 1,5 % | 1,8 % |
+| Chỉ AI | 8 | 1 | 12,5 % | 1,5 % | 2,6 % |
+| Kết hợp như cũ | 286 | 2 | 0,7 % | 2,9 % | 1,1 % |
+| Kết hợp, chỉ giữ cảnh báo trong phạm vi thay đổi | 43 | 1 | 2,3 % | 1,5 % | 1,8 % |
 
-Ba kết luận: (1) báo động giả giảm 4–5 lần chủ yếu nhờ danh sách "Không báo", nhưng danh sách được viết sau khi nhìn thấy bộ lỗi tiêm nên có nguy cơ "học thuộc đề"; (2) self-verify kiểu cũ làm xấu kết quả, fact-check mới an toàn nhưng chưa chứng minh được lợi ích với model nhỏ; (3) trên PR thật hệ thống gần như im lặng — cần thử model mạnh hơn.
+Giám khảo AI phân loại báo động giả (model khác model sinh, 3 phiếu): trên bộ Python, cả 20 báo động giả đều là nhận xét đúng nằm ngoài đáp án (thiếu test cho hàm mới, thiếu xử lý lỗi…); bộ đa ngôn ngữ 5/6 đúng và 1 bịa, tức 4 % tổng nhận xét. Tôi ghi kèm cảnh báo: giám khảo nhỏ có xu hướng gật — với model lớn hơn (chỉ đủ hạn mức thử một mẫu), 2/3 phiếu lại cho rằng nhận xét "thiếu test cho hàm ping" là không có căn cứ.
+
+Ba điều tôi rút ra từ bảng số: báo động giả giảm nhiều là thật nhưng có mùi "học thuộc đề"; self-verify kiểu cũ nên bỏ hẳn; và khoảng cách giữa 89,5 % trên bộ đề với 2,6 % trên PR thật là thứ cần được nói thẳng trong báo cáo cuối, không nên giấu.
 
 ---
 
-## 5. Lỗi tìm được nhờ đo đạc (ghi lại để không lặp)
+## 6. Kế hoạch thử nghiệm Firebase cho website demo
 
-| Lỗi | Cách phát hiện | Bài học |
+Sau khi hoàn thiện, tôi muốn có một website để trình bày đồ án: người xem đăng nhập bằng GitHub, thấy danh sách PR đã review, bấm vào xem từng nhận xét, và có thể bấm "review thử" trên một repo mẫu rồi nhìn hệ thống chạy từng bước. Tôi đã xem Firebase giải quyết được gì cho việc này.
+
+**Firebase hợp với phần "mặt tiền":**
+
+- *Hosting* cho trang web (HTTPS, domain miễn phí, deploy một lệnh).
+- *Authentication* với nhà cung cấp GitHub — có sẵn nút đăng nhập, không phải tự viết OAuth; token nhận được còn dùng được để liệt kê repo của người xem.
+- *Firestore* với realtime listener: worker ghi tiến độ ("đang quét static → đang hỏi vai SE → đã đăng 5 nhận xét") và trang web tự cập nhật — đây là hiệu ứng demo tốt nhất mà Postgres cộng polling không cho được dễ.
+- Gói miễn phí đủ cho quy mô demo.
+
+**Firebase không thay được phần lõi:** worker và sandbox Docker không chạy được trên Cloud Functions, nên phần review vẫn ở một máy chủ riêng (VPS rẻ hoặc Google Cloud Run). Webhook của GitHub vẫn trỏ về FastAPI trên máy chủ đó. Postgres đang có vẫn là nơi lưu lịch sử và bảng dấu vân tay; Firestore chỉ nhận bản "tóm tắt để hiển thị" — tôi không định viết lại `memory.py`.
+
+**Kiến trúc dự kiến:**
+
+```
+Firebase Hosting ──(đọc realtime)──► Firestore ◄──(ghi tiến độ + tóm tắt kết quả)── worker HermesQA
+      │                                                                             (VPS / Cloud Run, có Docker)
+      └── Firebase Auth (GitHub) ──► nút "Review thử" ──► FastAPI /demo/review ───────┘
+```
+
+**Các bước thử nghiệm (ước 1,5–2 tuần, xen kẽ với việc chính):**
+
+| Bước | Việc | Tiêu chí xong |
 |---|---|---|
-| D3: bộ lọc nhiễu có test nhưng chưa được gọi | Chạy thật `both`, thấy 11 B101 lọt | Test phải đi qua đường gọi thật |
-| Fact-check lý luận vòng loại 4 nhận xét đúng | Đọc file `_meta` ghi lý do loại | Mọi quyết định của AI cần dữ liệu trung gian để truy vết |
-| Diff PR thật ngược chiều / thừa hàng nghìn dòng | So số dòng diff với dataset và GitHub API | Kiểm tra kích thước đầu vào trước khi tin kết quả |
-| 240/275 cảnh báo static ngoài phần sửa | Phân loại vị trí finding theo hunk | Benchmark nhỏ che giấu vấn đề chỉ lộ trên repo thật |
-| Hai công cụ static báo cùng lỗi thành 2 nhận xét | Rà tay 15 báo động giả | Đọc từng FP, không chỉ nhìn tổng |
+| 1 | Tạo project Firebase, bật Hosting + Auth (GitHub) + Firestore; tạo OAuth App trên GitHub | Đăng nhập được bằng tài khoản GitHub, thấy tên người dùng |
+| 2 | Worker ghi tiến độ: thêm `app/publish_firestore.py` (Admin SDK, service account) gọi sau mỗi bước review; tắt được bằng biến môi trường để eval không bị ảnh hưởng | Chạy CLI trên một case, Firestore hiện đúng chuỗi trạng thái và danh sách nhận xét |
+| 3 | Trang web tối thiểu: danh sách PR, trang chi tiết, badge trạng thái realtime | Mở hai tab, chạy review ở tab này, tab kia tự đổi |
+| 4 | Endpoint `/demo/review` có giới hạn tần suất và chỉ cho repo mẫu, để khách không tiêu hết hạn mức LLM | Gọi quá 3 lần/giờ bị từ chối; repo ngoài danh sách bị từ chối |
+| 5 | Triển khai worker lên VPS/Cloud Run, nối webhook GitHub thật | Mở PR trên repo mẫu → comment xuất hiện trên GitHub và trên web |
+
+**Rủi ro đã thấy trước:** quyền Firestore phải khóa chặt (chỉ worker được ghi, khách chỉ đọc) — tôi sẽ viết security rules trước khi mở public; hạn mức LLM miễn phí là nút cổ chai nên demo cần cache kết quả của các PR mẫu. Nếu Firebase gây nhiều rắc rối hơn giá trị, phương án dự phòng là FastAPI phục vụ luôn trang tĩnh và đẩy trạng thái bằng SSE — mất Auth và HTTPS "sẵn", nhưng ít thứ phải học.
 
 ---
 
-## 6. Kế hoạch tuần tới
+## 7. Tuần tới
 
-1. **Website demo** sau khi hoàn thiện: trang giới thiệu, đăng nhập GitHub, xem kết quả review của các PR đã chạy, nút "review thử" trên repo mẫu. Phần chạy review (worker + sandbox Docker) vẫn phải ở máy chủ riêng (VPS hoặc Cloud Run); Firebase chỉ phù hợp cho phần hiển thị (Hosting, Auth, Firestore cho trạng thái thời gian thực) — xem nhận định riêng gửi kèm.
-2. Thử model mạnh hơn (Claude hoặc Gemini Pro) trên cả ba bộ, đặc biệt 15 PR thật, để tách "im lặng do model" khỏi "im lặng do lời nhắc".
-3. Dùng model khác họ làm giám khảo phân loại báo động giả, hoặc rà tay một mẫu.
-4. Test luồng GitHub App thật trên một repo demo (cần credential).
+1. Bắt đầu bước 1–2 của kế hoạch Firebase (phần worker ghi tiến độ làm trước, vì nó độc lập với giao diện).
+2. Thử một model mạnh hơn (Claude hoặc Gemini Pro) trên cả ba bộ, trước hết là 15 PR thật, để biết hệ thống "im lặng" vì model hay vì lời nhắc. Đây là câu hỏi quan trọng nhất còn mở.
+3. Dùng model khác họ làm giám khảo phân loại báo động giả, hoặc tự rà tay một mẫu 20 nhận xét.
+4. Nếu có credential GitHub App: thử luồng thật trên repo demo, đo dấu vân tay có chặn đăng trùng không.
 
 ---
 
-## 7. Phụ lục: danh sách commit trong kỳ
+## Phụ lục. Commit trong kỳ
 
 | Ngày | Commit | Nội dung |
 |---|---|---|
-| 05/10 | `5b6449a` | Sửa bước gộp static/LLM theo kết quả eval, lọc nhiễu bandit B101, cập nhật báo cáo |
-| 05/10 | `057fead` | Chạy lại `both` thật, nối bộ lọc B101 vào `collect()` (bug D3), backend Anthropic, đề xuất từ Open Code Review |
+| 05/10 | `5b6449a` | Sửa bước gộp static/LLM theo kết quả đo, lọc nhiễu bandit B101 |
+| 05/10 | `057fead` | Chạy lại kết hợp thật, nối bộ lọc B101 vào `collect()` (bug D3), backend Anthropic, tài liệu đề xuất |
 | 05/10 | `d2c5a0b` | Triển khai 7 đề xuất từ khảo sát Open Code Review |
-| 06/10 | `2133adf` | Chặn fact-check lý luận vòng, lọc static theo hunk, diff AACR đúng chiều |
-| 06/10 | `87c12e2` | Đề xuất OCR: mục 9 kết quả sau triển khai, PDF |
-| 07/10 | `8e87c2e` | Gộp mọi finding static cùng dòng; gọi lại JSON hỏng kèm thông báo lỗi; README eval |
-| 07/10 | `869687c` | Đề xuất OCR mục 9: số đo cuối |
-| 07/10 | `ac611ea` | gitignore thư mục rescore |
-| 07/10 | `a881536` | Báo cáo tiến độ nhóm E, bảng 7.6, `tools/md2pdf.py`, PDF |
+| 06/10 | `2133adf` | Chặn fact-check lý luận vòng, lọc static theo phạm vi thay đổi, diff AACR đúng chiều |
+| 06/10 | `87c12e2` | Đề xuất: mục 9 kết quả sau triển khai |
+| 07/10 | `8e87c2e` | Gộp cảnh báo tĩnh cùng dòng; gọi lại JSON hỏng có kèm lỗi |
+| 07/10 | `869687c` | Đề xuất: số đo cuối |
+| 07/10 | `a881536` | Báo cáo tiến độ (nhóm E, bảng 7.6), `tools/md2pdf.py` |
 
-Tài liệu đi kèm trong repo: `BAO_CAO_TIEN_DO.md` (+PDF, 21 trang), `docs/DE_XUAT_CAI_TIEN_TU_OPEN_CODE_REVIEW.md` (+PDF, 9 trang), `eval/README.md`.
+Tài liệu liên quan trong repo: `BAO_CAO_TIEN_DO.md` (21 trang PDF), `docs/DE_XUAT_CAI_TIEN_TU_OPEN_CODE_REVIEW.md` (9 trang PDF), `eval/README.md`.
