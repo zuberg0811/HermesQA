@@ -202,19 +202,26 @@ Nếu chỉ còn một tuần: làm 1, 2, 3 và phần tối thiểu của 4, 5.
 
 Cả bảy đề xuất đã được viết thành mã và kiểm thử (commit `d2c5a0b`, chỉnh sửa thêm ở `2133adf`; 34 kiểm thử tự động đều đạt). Phần này ghi lại điều đo được, kể cả điều không như mong đợi.
 
-### 9.1. Trên bộ lỗi tiêm (35 PR Python) — số sơ bộ
+### 9.1. Trên bộ lỗi tiêm (35 PR Python, 18 PR đa ngôn ngữ) — số đã chốt 07/10/2026
 
-Chạy với cùng mô hình như trước (`gemini-3.1-flash-lite`) để so sánh công bằng. **Lưu ý:** đây là lần chạy đầu của pipeline mới; sau đó chúng tôi phát hiện lỗi ở bước kiểm tra sự thật (mục 9.3) nên cấu hình `llm` sẽ được chạy lại; số dưới đây có thể thay đổi vài điểm.
+Chạy lại toàn bộ với cùng mô hình như trước (`gemini-3.1-flash-lite`) để so sánh công bằng. Cột "đúng dòng" là chấm ở độ lệch 0 dòng (nhận xét phải nằm đúng dòng lỗi), đo tác dụng của việc ghim bằng đoạn code.
 
-| Cấu hình | Trước (F1) | Sau (F1) | Báo động giả (FP) |
-|---|---|---|---|
-| Chỉ AI, có kiểm chứng | 70,1% | 86,5% | 27 → 6 |
-| Chỉ AI, không kiểm chứng | 69,4% | 90,7% | 28 → 5 |
-| Bộ đa ngôn ngữ (18 PR), chỉ AI | 73,5% | 87,8% | 13 → 5 |
+| Cấu hình (bộ Python) | Trước: F1 | Sau: F1 | Sau: đúng dòng | Báo động giả | Giây / token mỗi PR |
+|---|---|---|---|---|---|
+| Chỉ AI, kiểm tra sự thật (mặc định mới) | 70,1% | **89,5%** | 89,5% | 27 → 6 | 18,5 s · 6.355 |
+| Chỉ AI, không kiểm chứng | 69,4% | 89,5% | 89,5% | 28 → 6 | 12,2 s · 4.532 |
+| Chỉ AI, self-verify kiểu cũ | 70,1% | 82,5% | 82,5% | 11 | 18,6 s · 8.656 |
+| AI + công cụ tĩnh (mặc định sản phẩm) | 66,0% | **87,2%** | 76,9% | 33 → 8 | 118 s · 6.551 |
+| Đa ngôn ngữ, chỉ AI | 73,5% | 85,7% | 76,2% | 13 → 6 | 18,3 s · 6.994 |
+| Đa ngôn ngữ, AI + công cụ tĩnh | 72,0% | 81,8% | 72,7% | 16 → 8 | 110 s · 7.052 |
 
-Giải thích cho người không chuyên: điểm tăng chủ yếu vì **danh sách "Không báo"** (đề xuất 3) — AI thôi nhận xét những thứ đúng-nhưng-vô-ích ("thiếu docstring", "nên thêm type hint"...). Đổi lại, chúng tôi phải ghi rõ nguy cơ: danh sách này được viết sau khi đã nhìn thấy bộ lỗi tiêm, nên một phần điểm tăng có thể là "học thuộc đề". Đó chính là lý do phải có mục 9.2.
+Đọc bảng này thế nào, cho người không chuyên:
 
-Việc **ghim nhận xét bằng đoạn code** (đề xuất 1) hoạt động đúng kỹ thuật — 65/65 nhận xét ghim được — nhưng không làm tăng điểm "đúng từng dòng" trên bộ này, vì các PR tiêm lỗi vốn nhỏ và ít lệch dòng. Hiệu quả của nó chỉ thấy được trên PR thật.
+- **Báo động giả giảm 4–5 lần** là thay đổi lớn nhất, chủ yếu nhờ danh sách "Không báo" (đề xuất 3): AI thôi nhận xét những thứ đúng-nhưng-vô-ích. Phải ghi rõ nguy cơ: danh sách này được viết sau khi đã nhìn thấy bộ lỗi tiêm, nên một phần điểm tăng có thể là "học thuộc đề". Mục 9.2 (PR thật) là phép thử cho nghi ngờ đó.
+- **Ghim bằng đoạn code** (đề xuất 1): với cấu hình chỉ AI, điểm ở độ lệch 0 dòng bằng đúng điểm ở độ lệch 3 dòng — 100% nhận xét ghim được và nằm đúng dòng. Trước đây mất 1 nhận xét khi chấm chặt. Với cấu hình có công cụ tĩnh, điểm "đúng dòng" thấp hơn vì công cụ tĩnh báo ở dòng đầu của câu lệnh nhiều dòng; đó là chuyện định nghĩa, không phải ghim sai.
+- **Ba cách kiểm chứng** (đề xuất 2): self-verify kiểu cũ *làm xấu* kết quả (thêm 5 báo động giả, mất 1 lỗi thật, tốn gấp đôi token) vì nó bắt AI viết lại toàn bộ nhận xét. Kiểm tra sự thật kiểu mới không làm mất lỗi nào, nhưng trên bộ này cũng không loại được báo động giả nào — và tốn thêm 40% token. Kết luận trung thực: an toàn nhưng chưa chứng minh được lợi ích với mô hình nhỏ này; cần thử mô hình mạnh hơn làm giám khảo.
+- **Giám khảo phân loại báo động giả** (đề xuất 7, dùng `gemini-3.5-flash-lite` — khác mô hình sinh nhận xét — bỏ 3 phiếu): trên bộ Python, 6/6 báo động giả của cấu hình chỉ AI là nhận xét *đúng nhưng ngoài đáp án* (thiếu test cho hàm mới, thiếu xử lý lỗi...), 0 bịa; bộ đa ngôn ngữ 5/6 đúng, **1 bịa** (4% tổng nhận xét). Tức là precision thực tế cao hơn con số theo đáp án. Cảnh báo: giám khảo nhỏ có xu hướng đồng ý — với một mô hình lớn hơn (`gemini-3.8-flash`, chỉ đủ hạn mức thử một mẫu) 2/3 phiếu lại cho rằng nhận xét "thiếu test cho hàm ping" là không có căn cứ.
+- **Gộp cảnh báo tĩnh cùng dòng**: khi đọc 15 báo động giả của cấu hình kết hợp, 7 cái là hai công cụ (hadolint, semgrep) báo *cùng một lỗi ở cùng một dòng* với hai nhãn khác nhau. Nay mọi cảnh báo tĩnh trên cùng một dòng gộp thành một comment; F1 kết hợp tăng 81,4% → 87,2%, đổi lại mất 1 lỗi thật vì nhãn của cụm lấy theo cảnh báo chính (hạn chế đã ghi).
 
 ### 9.2. Trên PR thật (15 PR mã nguồn mở, 68 vấn đề do kỹ sư xác nhận) — số đã chốt
 
@@ -239,5 +246,6 @@ Ba điều rút ra:
 
 ### 9.4. Việc còn lại
 
-- Chạy lại cấu hình `llm` và `both` trên hai bộ lỗi tiêm với bản sửa 9.3 (chờ hạn mức ngày của mô hình), chấm ở độ lệch 0 dòng, và chạy giám khảo phân loại báo động giả (đề xuất 7) — nên dùng một mô hình khác làm giám khảo để tránh "tự khen".
-- Thử mô hình mạnh hơn trên bộ PR thật để biết phần "im lặng" đến từ mô hình hay từ lời nhắc.
+- Thử một mô hình mạnh hơn trên cả ba bộ (đặc biệt 15 PR thật) để biết phần "im lặng" đến từ mô hình hay từ lời nhắc, và để kiểm tra sự thật có cơ hội phát huy.
+- Dùng mô hình khác hẳn (không cùng họ Gemini) làm giám khảo phân loại báo động giả, hoặc rà tay một mẫu.
+- Mở rộng pilot PR thật ra ngoài Python và các PR lớn hơn 210 dòng.
