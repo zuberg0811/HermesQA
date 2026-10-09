@@ -68,6 +68,8 @@ def eval_datasets() -> list[dict]:
 def agents_overview(limit_runs: int = 200) -> dict:
     """Tab Agent: (a) điểm theo agent trên từng bộ eval (có đáp án); (b) chỉ số theo vai gom từ run log."""
     datasets = eval_datasets()
+    prim = primary_names()
+    datasets = [d for d in datasets if d["name"] in prim] or datasets
     by_dataset = []
     for ds in datasets:
         rows = []
@@ -115,15 +117,24 @@ def run_detail(run_id: str) -> dict | None:
     return rec
 
 
+def primary_names() -> list[str]:
+    return [x.strip() for x in settings.eval_primary.split(",") if x.strip()]
+
+
 def overview() -> dict:
     datasets = eval_datasets()
+    prim = primary_names()
+    datasets.sort(key=lambda d: (d["name"] not in prim, prim.index(d["name"]) if d["name"] in prim else d["name"]))
     headline = []
     for ds in datasets:
-        for cfg in ("llm", "both"):
+        if ds["name"] not in prim:
+            continue
+        for cfg in ("static", "llm", "both"):
             s = ds["results"]["configs"].get(cfg)
             if s:
                 headline.append({"dataset": ds["name"], "config": cfg,
                                  **{k: s[k] for k in ("tp", "fp", "fn", "precision", "recall", "f1", "f1_tol0")}})
     runs = recent_runs(10)
-    return {"datasets": datasets, "headline": headline, "runs": runs, "store": type(get_store()).__name__,
+    return {"datasets": [d for d in datasets if d["name"] in prim], "history": [d for d in datasets if d["name"] not in prim],
+            "headline": headline, "runs": runs, "store": type(get_store()).__name__,
             "model": settings.anthropic_model if settings.agent_backend == "anthropic" else settings.llm_model}

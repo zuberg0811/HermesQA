@@ -34,6 +34,7 @@ class Settings(BaseSettings):
     firebase_credentials: str = ""        # đường dẫn file service-account JSON
     firestore_collection: str = "hermesqa_runs"
     eval_root: str = "eval"               # dashboard quét các thư mục eval/out* có results
+    eval_primary: str = "out-v3-rescored,out-multi-v3-rescored"   # bộ "hiện hành" lên thẻ điểm; còn lại là lịch sử
 
     max_prompt_chars: int = 60000
     max_file_chars: int = 30000
