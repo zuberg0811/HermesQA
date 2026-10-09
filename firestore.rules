@@ -1,0 +1,26 @@
+rules_version = '2';
+// Mô hình quyền của website demo HermesQA:
+//   - Chỉ máy chủ (Admin SDK, bỏ qua rules) được GHI: worker/CLI ghi run log, app/demo.py ghi job,
+//     tools/publish_eval.py ghi bảng eval.
+//   - Trang web (SDK client) chỉ ĐỌC. Khách chưa đăng nhập cũng đọc được vì đây là trang trình bày đồ án;
+//     đăng nhập GitHub chỉ cần cho nút "Review thử" (xác thực ở API, không phải ở Firestore).
+//   - Mọi collection khác: đóng.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /hermesqa_runs/{runId} {
+      allow read: if true;
+      allow write: if false;
+    }
+    match /hermesqa_eval/{evalId} {
+      allow read: if true;
+      allow write: if false;
+    }
+    match /hermesqa_demo_jobs/{jobId} {
+      allow read: if true;
+      allow write: if false;
+    }
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

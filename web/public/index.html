@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HermesQA · Demo</title>
+<link rel="stylesheet" href="style.css">
+<script src="firebase-config.js"></script>
+</head>
+<body>
+<header class="top">
+  <div class="brand">
+    <span class="logo">⚕</span>
+    <div>
+      <h1>HermesQA</h1>
+      <p>Review pull request bằng ba vai AI (SE · QA · DevOps) kết hợp công cụ tĩnh trong sandbox</p>
+    </div>
+  </div>
+  <div class="who" id="who"></div>
+</header>
+
+<div id="banner" class="banner hidden"></div>
+
+<nav class="tabs" id="tabs">
+  <button data-tab="runs" class="active">Lần chạy</button>
+  <button data-tab="agents">Chấm điểm agent</button>
+  <button data-tab="eval">Benchmark</button>
+  <button data-tab="demo">Review thử</button>
+</nav>
+
+<main>
+  <section id="tab-runs" class="tab active">
+    <div class="split">
+      <aside class="list" id="run-list"><p class="muted">Đang tải…</p></aside>
+      <article class="detail" id="run-detail"><p class="muted">Chọn một lần chạy ở bên trái.</p></article>
+    </div>
+  </section>
+
+  <section id="tab-agents" class="tab">
+    <div id="agents"></div>
+  </section>
+
+  <section id="tab-eval" class="tab">
+    <div id="eval"></div>
+  </section>
+
+  <section id="tab-demo" class="tab">
+    <div class="demo-grid">
+      <form id="demo-form" class="card">
+        <h2>Review thử trên repo mẫu</h2>
+        <p class="muted" id="demo-hint">Hệ thống chạy đúng đường như eval (<code>python -m app.cli</code>) và đẩy tiến độ lên đây theo thời gian thực.</p>
+        <label>Repo mẫu <select id="demo-repo" required></select></label>
+        <label>Nhánh cần review <select id="demo-head" required></select></label>
+        <label>Nhánh gốc <input id="demo-base" value="main" required pattern="[A-Za-z0-9][A-Za-z0-9._/\-]*"></label>
+        <div class="row">
+          <button type="submit" id="demo-submit" class="primary">Chạy review</button>
+          <span id="demo-status" class="muted"></span>
+        </div>
+      </form>
+      <article class="card" id="demo-job"><p class="muted">Chưa có job nào trong phiên này.</p></article>
+    </div>
+  </section>
+</main>
+
+<footer class="foot">
+  Đồ án tốt nghiệp · Phí Thành Dương · mã nguồn <a href="https://github.com/zuberg0811/HermesQA">github.com/zuberg0811/HermesQA</a>
+  · <span id="source-badge" class="muted"></span>
+</footer>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>

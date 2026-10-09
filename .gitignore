@@ -20,3 +20,7 @@ eval/out-multi-v3/
 eval/aacr/
 eval/out-v3-rescored
 eval/out-multi-v3-rescored
+# Firebase: project id và web config là của từng người triển khai
+.firebaserc
+web/public/firebase-config.js
+.firebase/

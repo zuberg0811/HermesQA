@@ -80,6 +80,10 @@ python eval/run_eval.py --configs static    # rồi: --configs llm,both (cần L
 python eval/score.py                        # -> eval/out/results.md
 ```
 
+## 7. Website demo (dashboard + Firebase)
+- Dashboard nội bộ tại `/dashboard` của API (điểm theo agent, nhật ký từng lần chạy): xem [`docs/WEB_DEMO.md`](docs/WEB_DEMO.md).
+- Trang công khai trên Firebase Hosting (đăng nhập GitHub, lịch sử realtime từ Firestore, nút "Review thử" gọi `/demo/review`): xem [`docs/FIREBASE_DEMO.md`](docs/FIREBASE_DEMO.md). Mã ở `web/public/`, `app/demo.py`, `firestore.rules`; đẩy bảng benchmark bằng `python tools/publish_eval.py`.
+
 ## Bảo mật
 - Code PR **không bao giờ được thực thi**; chỉ static tools chạy trong container `--network none`, `cap_drop ALL`, giới hạn CPU/RAM, mount source read-only.
 - Token GitHub là installation token ngắn hạn, bị gỡ khỏi `.git` ngay sau khi clone.
