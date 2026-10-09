@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block title %}Lần chạy{% endblock %}
+{% block body %}
+<h1>Lịch sử các lần chạy</h1>
+<p class="lead">Mỗi lần review (CLI, eval hay worker GitHub) ghi một bản nhật ký: vai nào gọi bao nhiêu lượt, sinh bao nhiêu nhận xét, bị kiểm chứng loại bao nhiêu, tốn bao nhiêu token. Danh sách tự làm mới mỗi 15 giây.</p>
+<div hx-get="/dashboard/runs?limit={{ limit }}" hx-trigger="every 15s" hx-swap="innerHTML">
+{% include "_runs_table.html" %}
+</div>
+{% endblock %}

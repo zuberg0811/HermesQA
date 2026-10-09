@@ -9,11 +9,13 @@ from redis import Redis
 from rq import Queue
 
 from app.config import settings
+from app.web.router import router as dashboard_router
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("hermesqa.api")
 
 app = FastAPI(title="HermesQA - AI Code Reviewer", version="0.1.0")
+app.include_router(dashboard_router)       # trang web demo: /dashboard
 queue = Queue("reviews", connection=Redis.from_url(settings.redis_url))
 
 REVIEW_ACTIONS = {"opened", "synchronize", "reopened", "ready_for_review"}

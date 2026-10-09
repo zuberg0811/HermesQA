@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}Tổng quan{% endblock %}
+{% block body %}
+<h1>HermesQA — bot review pull request</h1>
+<p class="lead">Ba agent AI (SE · QA · DevOps) cộng năm công cụ static trong sandbox. Model hiện tại: <code>{{ model }}</code> · nơi lưu nhật ký chạy: <code>{{ store }}</code>.</p>
+
+<h2>Điểm hiện tại trên các bộ đo</h2>
+{% if headline %}
+<div class="cards">
+  {% for h in headline %}
+  <div class="card">
+    <div class="k">{{ h.dataset }} · {{ h.config }}</div>
+    <div class="v">{{ h.f1 | pct }}</div>
+    <div class="s">F1 · P {{ h.precision | pct }} · R {{ h.recall | pct }} · đúng dòng {{ h.f1_tol0 | pct }}</div>
+    <div class="bar"><i style="width:{{ (h.f1 * 100) | round }}%"></i></div>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<div class="empty">Chưa có kết quả eval trong <code>eval/out*</code>. Chạy <code>python eval/run_eval.py</code> rồi tải lại.</div>
+{% endif %}
+
+<h2>Các bộ dữ liệu đã chấm</h2>
+<div class="scroll"><table>
+<thead><tr><th>Thư mục</th><th>Đáp án</th><th class="n">Case</th><th class="n">Lỗi chuẩn</th><th>Cấu hình</th><th class="n">TP</th><th class="n">FP</th><th class="n">FN</th><th class="n">Precision</th><th class="n">Recall</th><th class="n">F1</th><th class="n">F1 đúng dòng</th><th class="n">s/PR</th><th class="n">token/PR</th></tr></thead>
+<tbody>
+{% for ds in datasets %}{% for cfg, s in ds.results.configs.items() %}
+<tr>
+  <td>{% if loop.first %}<code>{{ ds.name }}</code>{% endif %}</td>
+  <td>{% if loop.first %}<span class="small muted">{{ ds.truth }}</span>{% endif %}</td>
+  <td class="n">{% if loop.first %}{{ ds.cases }}{% endif %}</td>
+  <td class="n">{% if loop.first %}{{ ds.truths }}{% endif %}</td>
+  <td><code>{{ cfg }}</code></td>
+  <td class="n">{{ s.tp }}</td><td class="n">{{ s.fp }}</td><td class="n">{{ s.fn }}</td>
+  <td class="n">{{ s.precision | pct }}</td><td class="n">{{ s.recall | pct }}</td>
+  <td class="n"><strong>{{ s.f1 | pct }}</strong></td><td class="n">{{ s.f1_tol0 | pct }}</td>
+  <td class="n">{{ s.avg_seconds | f1 }}</td><td class="n">{{ s.avg_tokens | num }}</td>
+</tr>
+{% endfor %}{% endfor %}
+</tbody></table></div>
+<p class="small muted">Một finding là đúng khi cùng file, lệch ≤ 3 dòng và đúng loại lỗi với một đáp án chưa được khớp; "đúng dòng" chấm ở độ lệch 0. Mọi finding không khớp đều tính là báo nhầm, kể cả nhận xét hợp lý ngoài đáp án — precision là cận dưới.</p>
+
+<h2>Lần chạy gần đây</h2>
+{% include "_runs_table.html" %}
+<p><a href="/dashboard/runs">Xem tất cả →</a></p>
+{% endblock %}

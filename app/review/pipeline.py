@@ -36,10 +36,18 @@ class LLMReview:
     skipped: list[Skipped] = field(default_factory=list)      # file không được (hoặc chỉ được một phần) review
     removed: list[dict] = field(default_factory=list)         # finding bị loại sau khi sinh, kèm lý do
     stats: Counter = field(default_factory=Counter)
+    role_stats: dict[str, Counter] = field(default_factory=lambda: defaultdict(Counter))   # theo vai: calls, raw, kept, removed, tokens
 
     def meta(self) -> dict:
         return {"skipped": [s.__dict__ for s in self.skipped], "removed": self.removed,
-                "stats": dict(self.stats), "failed_roles": self.failed_roles}
+                "stats": dict(self.stats), "failed_roles": self.failed_roles,
+                "role_stats": {r: dict(c) for r, c in self.role_stats.items()}}
+
+
+def _usage_since(backend, before: tuple[int, int]) -> tuple[int, int]:
+    """Token của lượt gọi vừa xong (backend chỉ nhớ lượt gần nhất; mỗi bước pipeline gọi đúng 1 lượt)."""
+    cur = getattr(backend, "last_usage", (0, 0))
+    return cur if cur != before else (0, 0)
 
 
 def static_summary_for(static: list[Finding], paths: set[str]) -> str:
@@ -93,8 +101,10 @@ def attach_code_to_static(static: list[Finding], files: list[ChangedFile]) -> No
 
 def run_llm_review(backend: AgentBackend, roles: list[str], files: list[ChangedFile], repo_dir: str,
                    pr_meta: dict, static: list[Finding], conventions: str = "", repo_memory: str = "",
-                   verify_mode: str | None = None) -> LLMReview:
+                   verify_mode: str | None = None, on_step=None) -> LLMReview:
+    """on_step(name, detail): callback tiến độ cho run log/web realtime; None = không báo."""
     mode = verify_mode or settings.verify_mode
+    step = on_step or (lambda name, detail="": None)
     res = LLMReview()
     kept, res.skipped = select_for_llm(files)
     by_path = {f.path: f for f in kept}
@@ -122,14 +132,22 @@ def run_llm_review(backend: AgentBackend, roles: list[str], files: list[ChangedF
                 res.skipped.append(t)
 
         notes: list[str] = []
+        step(f"{role}:start", f"{len(role_files)} file, {len(batches)} lô")
         try:
             for batch in batches:
                 paths = [it["path"] for it in batch]
                 prompt = build_user_prompt(pr_meta, batch, static_summary_for(static, set(paths)),
                                            conventions, repo_memory, resolve_rules(paths))
+                mark = getattr(backend, "last_usage", (0, 0))
                 out = backend.run(role, prompt)
                 res.stats["llm_calls"] += 1
                 res.stats["raw_findings"] += len(out.findings)
+                rs = res.role_stats[role]
+                rs["calls"] += 1
+                rs["raw"] += len(out.findings)
+                tin, tout = _usage_since(backend, mark)
+                rs["tokens_in"] += tin; rs["tokens_out"] += tout
+                res.stats["tokens_in"] += tin; res.stats["tokens_out"] += tout
 
                 in_scope = []
                 for f in out.findings:
@@ -145,9 +163,17 @@ def run_llm_review(backend: AgentBackend, roles: list[str], files: list[ChangedF
 
                 if mode != "off" and out.findings:
                     res.stats["verify_calls"] += 1
+                    rs["verify_calls"] += 1
+                    step(f"{role}:verify", f"kiểm chứng {len(out.findings)} nhận xét")
+                mark = getattr(backend, "last_usage", (0, 0))
                 out, removed = verify(mode, backend, role, out, batch, by_path)
+                tin, tout = _usage_since(backend, mark)
+                rs["tokens_in"] += tin; rs["tokens_out"] += tout
+                res.stats["tokens_in"] += tin; res.stats["tokens_out"] += tout
                 res.removed += removed
                 res.stats["removed_by_factcheck"] += len(removed)
+                rs["removed"] += len(removed)
+                rs["kept"] += len(out.findings)
                 for f in out.findings:
                     f.file = _fix_path(f.file, paths)
                     if mode == "legacy":            # bản cũ sinh lại finding nên phải ghim lại
@@ -159,7 +185,10 @@ def run_llm_review(backend: AgentBackend, roles: list[str], files: list[ChangedF
         except Exception as e:  # một vai lỗi (LLM quá tải, JSON hỏng) không được làm hỏng cả review
             log.exception("role %s failed: %s", role, e)
             res.failed_roles.append(role)
+            res.role_stats[role]["failed"] += 1
+            step(f"{role}:failed", str(e)[:200])
             res.summaries[role] = f"(lỗi khi chạy: {e})"
             continue
         res.summaries[role] = " ".join(notes) or "Không có nhận xét."
+        step(f"{role}:done", f"giữ {res.role_stats[role]['kept']}/{res.role_stats[role]['raw']} nhận xét")
     return res

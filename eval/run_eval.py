@@ -45,7 +45,7 @@ def run_case(repo: str, branch: str, cid: str, config: str, out_dir: str) -> dic
     out_md = os.path.join(out_dir, f"{cid}.md")
     cmd = [sys.executable, "-m", "app.cli", "--repo", repo, "--base", "main", "--head", branch,
            "--out", out_md, "--json", out_json,
-           "--meta", os.path.join(out_dir, "_meta", f"{cid}.json"), *CONFIG_FLAGS[config]]
+           "--run-source", "eval", "--meta", os.path.join(out_dir, "_meta", f"{cid}.json"), *CONFIG_FLAGS[config]]
 
     env = dict(os.environ)
     # Eval đo KHẢ NĂNG PHÁT HIỆN nên nới policy: giữ mọi severity, không lọc confidence.

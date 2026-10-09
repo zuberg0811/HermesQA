@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}Agent{% endblock %}
+{% block body %}
+<h1>Agent &amp; công cụ</h1>
+<p class="lead">Hai cách chấm: <strong>trên bộ eval có đáp án</strong> (precision của từng agent — nhận xét của agent đó đúng bao nhiêu phần) và <strong>trên mọi lần chạy</strong> (không cần đáp án: sinh bao nhiêu, bị kiểm chứng loại bao nhiêu, tốn bao nhiêu). Recall không tính theo agent vì một lỗi không "thuộc" riêng vai nào.</p>
+
+<h2>Ba vai AI</h2>
+<div class="cards">
+{% for role, info in role_info.items() %}
+  <div class="card"><div class="k"><span class="tag {{ role }}">{{ role }}</span> {{ info.name }}</div><div class="s" style="margin-top:6px">{{ info.focus }}</div></div>
+{% endfor %}
+</div>
+
+<h2>Điểm theo agent trên bộ eval (có đáp án)</h2>
+{% for ds in by_dataset %}
+<h3><code>{{ ds.name }}</code></h3>
+<div class="scroll"><table>
+<thead><tr><th>Cấu hình</th><th>Agent / công cụ</th><th class="n">Finding</th><th class="n">Đúng (TP)</th><th class="n">Nhầm (FP)</th><th class="n">Precision</th><th style="width:28%"></th></tr></thead>
+<tbody>
+{% for r in ds.rows %}
+<tr>
+  <td><code>{{ r.config }}</code></td>
+  <td>{% if r.agent in role_info %}<span class="tag {{ r.agent }}">{{ r.agent }}</span>{% else %}<code>{{ r.agent }}</code> <span class="small muted">{{ tool_info.get(r.agent, "") }}</span>{% endif %}</td>
+  <td class="n">{{ r.findings }}</td><td class="n">{{ r.tp }}</td><td class="n">{{ r.fp }}</td>
+  <td class="n"><strong>{{ r.precision | pct }}</strong></td>
+  <td><div class="bar"><i style="width:{{ (r.precision * 100) | round }}%"></i></div></td>
+</tr>
+{% endfor %}
+</tbody></table></div>
+{% else %}
+<div class="empty">Chưa có bộ eval nào trong <code>eval/out*</code>.</div>
+{% endfor %}
+
+<h2>Chỉ số theo vai trên {{ n_runs }} lần chạy gần nhất (không cần đáp án)</h2>
+{% if n_runs %}
+<div class="scroll"><table>
+<thead><tr><th>Vai</th><th class="n">Lần chạy</th><th class="n">Nhận xét thô / lần</th><th class="n">Giữ sau kiểm chứng / lần</th><th class="n">Vào báo cáo / lần</th><th class="n">Tỷ lệ bị loại</th><th class="n">Token / lần</th><th class="n">Lần lỗi</th></tr></thead>
+<tbody>
+{% for r in role_rows %}
+<tr>
+  <td><span class="tag {{ r.role }}">{{ r.role }}</span> {{ r.info.name }}</td>
+  <td class="n">{{ r.runs }}</td>
+  <td class="n">{{ r.avg_raw | f1 }}</td><td class="n">{{ r.avg_kept | f1 }}</td><td class="n">{{ r.avg_final | f1 }}</td>
+  <td class="n">{{ r.removed_rate | pct }}</td><td class="n">{{ r.avg_tokens | num }}</td>
+  <td class="n">{% if r.failed %}<span style="color:var(--bad)">{{ r.failed }}</span>{% else %}0{% endif %}</td>
+</tr>
+{% endfor %}
+</tbody></table></div>
+<p class="small muted">"Vào báo cáo" là số nhận xét của vai còn lại sau khi gộp trùng với công cụ static và với vai khác, và sau ngưỡng lọc của sản phẩm.</p>
+{% else %}
+<div class="empty">Chưa có lần chạy nào được ghi nhật ký.</div>
+{% endif %}
+{% endblock %}

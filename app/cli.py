@@ -22,6 +22,11 @@ from app.review.pipeline import LLMReview, attach_code_to_static, run_llm_review
 from app.review.router import select_roles
 from app.review.schemas import ReviewConfig
 from app.review.static_tools import collect as collect_static
+from app.runlog import RunContext
+
+
+def _model_name() -> str:
+    return settings.anthropic_model if settings.agent_backend == "anthropic" else settings.llm_model
 import yaml
 
 
@@ -39,6 +44,8 @@ def main():
                     help="bước kiểm chứng sau khi LLM sinh finding (mặc định: VERIFY_MODE trong cấu hình)")
     ap.add_argument("--no-verify", action="store_true", help="tương đương --verify off")
     ap.add_argument("--roles", help="VD: SE,QA")
+    ap.add_argument("--run-source", default="cli", help="nhãn nguồn trong run log: cli | eval")
+    ap.add_argument("--no-runlog", action="store_true", help="không ghi nhật ký lần chạy (dashboard)")
     a = ap.parse_args()
 
     if a.diff_file:
@@ -54,9 +61,14 @@ def main():
         print("Không có file để review"); return
     changed = {f.path for f in files}
 
+    pr_meta = {"pr_number": 0, "title": f"{a.base}..{a.head}", "body": "", "owner": "local", "repo": os.path.basename(os.path.abspath(a.repo)), "head_sha": a.head}
+    ctx = None if a.no_runlog else RunContext(a.run_source, pr_meta, _model_name())
+    step = ctx.step if ctx else (lambda name, detail="": None)
+
     static = []
     tools = None
     if not a.skip_static:
+        step("static", "quét trong sandbox")
         from app.sandbox import run_static_analysis   # import muộn: --skip-static không cần Docker SDK
         out_dir = tempfile.mkdtemp(prefix="hqa-out-")
         run_static_analysis(a.repo, out_dir, targets=sorted(changed))
@@ -67,19 +79,21 @@ def main():
             if st["state"] == "failed":
                 log.error("cong cu static THAT BAI: %s (ket qua thieu phan cua no)", name)
     attach_code_to_static(static, files)
+    if not a.skip_static:
+        step("static:done", f"{len(static)} finding")
 
     roles = [r for r in a.roles.split(",") if r.strip()] if a.roles is not None else select_roles(files, cfg.roles)
-    pr_meta = {"pr_number": 0, "title": f"{a.base}..{a.head}", "body": "", "owner": "local", "repo": os.path.basename(os.path.abspath(a.repo)), "head_sha": a.head}
     mode = "off" if a.no_verify else (a.verify or settings.verify_mode)
 
     res = LLMReview()
     if roles:
         for role in roles:
             print(f"[agent] {role} ...")
-        res = run_llm_review(get_backend(), roles, files, a.repo, pr_meta, static, cfg.conventions, "", mode)
+        res = run_llm_review(get_backend(), roles, files, a.repo, pr_meta, static, cfg.conventions, "", mode, on_step=step)
         for role in res.failed_roles:
             print(f"[agent] {role} LỖI: {res.summaries.get(role)}")
 
+    step("postprocess", "gộp trùng, lọc theo ngưỡng")
     all_f = postprocess.dedupe(static + res.findings)
     inline, overflow = postprocess.apply_policy(all_f, files, settings.min_confidence, settings.min_severity_to_comment, cfg.max_comments or settings.max_comments_per_pr)
     final = inline + overflow
@@ -94,6 +108,11 @@ def main():
         os.makedirs(os.path.dirname(os.path.abspath(a.meta)), exist_ok=True)
         json.dump({**res.meta(), "verify_mode": mode, "roles": roles}, open(a.meta, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
     print(f"\n{len(final)} findings -> {a.out}")
+    if ctx:
+        ctx.finish(source=a.run_source, pr_meta=pr_meta, roles=roles, res=res, static=static, final=final,
+                   tools=tools, model=_model_name(), verify_mode=mode, skip_static=a.skip_static,
+                   extra={"eval_case": os.path.basename(a.json)[:-5]} if a.run_source == "eval" and a.json else None)
+        print(f"[runlog] {ctx.run_id}")
     for f in final:
         print(f"  [{f.severity:8}] {f.file}:{f.line}  {f.title}  ({f.role}, {f.confidence:.0%}, ghim={f.anchor or '-'})")
     for s in res.skipped:

@@ -135,6 +135,8 @@ class _JsonBackend:
     def complete(self, role: str, user_prompt: str, system: str | None = None) -> str:  # pragma: no cover
         raise NotImplementedError
 
+    last_usage: tuple[int, int] = (0, 0)   # (tokens vào, tokens ra) của lượt complete() gần nhất
+
     def run_json(self, role: str, user_prompt: str, system: str | None = None) -> dict:
         # JSON hỏng (thiếu dấu phẩy, ngoặc kép chưa escape) là lỗi ngẫu nhiên của model ~1/15 PR thật:
         # gọi lại đúng một lần trước khi coi là vai thất bại.
@@ -177,6 +179,7 @@ class OpenAICompatBackend(_JsonBackend):
                 time.sleep(wait)
         usage = getattr(resp, "usage", None)
         if usage:
+            self.last_usage = (int(usage.prompt_tokens or 0), int(usage.completion_tokens or 0))
             log.info("[%s] tokens in=%s out=%s", role, usage.prompt_tokens, usage.completion_tokens)
         return resp.choices[0].message.content or "{}"
 
@@ -219,6 +222,7 @@ class AnthropicBackend(_JsonBackend):
         usage = getattr(resp, "usage", None)
         if usage:
             cached = getattr(usage, "cache_read_input_tokens", 0) or 0
+            self.last_usage = (int(usage.input_tokens + cached), int(usage.output_tokens))
             log.info("[%s] tokens in=%s out=%s (cache_read=%s, model=%s)", role,
                      usage.input_tokens + cached, usage.output_tokens, cached, resp.model)
         return "".join(b.text for b in resp.content if b.type == "text") or "{}"

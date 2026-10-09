@@ -28,6 +28,13 @@ class Settings(BaseSettings):
     verify_mode: str = "factcheck"
     # Ngân sách ký tự cho MỘT lần gọi LLM (diff + context của các file trong lô). Vượt -> chia lô,
     # không cắt im lặng. 1 file vượt max_file_chars -> cắt CÓ GHI NHẬN trong report.
+    # Nhật ký mỗi lần chạy cho dashboard: auto = firestore nếu có FIREBASE_CREDENTIALS, không thì file JSON cục bộ
+    runlog_backend: str = "auto"          # auto | local | firestore | off
+    runlog_dir: str = "data/runs"
+    firebase_credentials: str = ""        # đường dẫn file service-account JSON
+    firestore_collection: str = "hermesqa_runs"
+    eval_root: str = "eval"               # dashboard quét các thư mục eval/out* có results
+
     max_prompt_chars: int = 60000
     max_file_chars: int = 30000
 

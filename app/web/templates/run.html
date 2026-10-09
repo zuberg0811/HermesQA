@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block title %}Lần chạy {{ run.run_id }}{% endblock %}
+{% block body %}
+<p class="small"><a href="/dashboard/runs">← Lịch sử</a></p>
+<h1>{{ run.eval_case or run.title or run.repo }} {% if run.pr_number %}<span class="muted">#{{ run.pr_number }}</span>{% endif %}</h1>
+<p class="lead">{{ run.started_at[:19] | replace("T", " ") }} UTC · nguồn <code>{{ run.source }}</code> · model <code>{{ run.model }}</code> · kiểm chứng <code>{{ run.config.verify_mode }}</code>{% if run.config.skip_static %} · không chạy static{% endif %} · {{ run.seconds }} s{% if run.conclusion %} · kết luận <strong>{{ run.conclusion }}</strong>{% endif %}</p>
+
+<div class="cards">
+  <div class="card"><div class="k">Static</div><div class="v">{{ run.counts.static }}</div><div class="s">{% for t, n in run.static_by_tool.items() %}{{ t }} {{ n }}{{ ", " if not loop.last }}{% endfor %}</div></div>
+  <div class="card"><div class="k">AI thô → giữ</div><div class="v">{{ run.counts.llm_raw }} → {{ run.counts.llm_kept }}</div><div class="s">{{ run.removed | length }} bị loại sau khi sinh</div></div>
+  <div class="card"><div class="k">Vào báo cáo</div><div class="v">{{ run.counts.final }}</div><div class="s">{% for s, n in run.counts.by_severity.items() %}<span class="sev-{{ s }}">{{ s }} {{ n }}</span>{{ " · " if not loop.last }}{% endfor %}</div></div>
+  <div class="card"><div class="k">Token</div><div class="v">{{ ((run.stats.tokens_in or 0) + (run.stats.tokens_out or 0)) | num }}</div><div class="s">{{ run.stats.llm_calls or 0 }} lượt gọi · {{ run.stats.verify_calls or 0 }} lượt kiểm chứng</div></div>
+</div>
+
+{% if run.steps %}
+<h2>Tiến độ</h2>
+<p class="small">{% for s in run.steps %}<span class="tag">{{ s.step }} <span class="muted">{{ s.elapsed }}s{% if s.detail %} · {{ s.detail }}{% endif %}</span></span> {% endfor %}{% if run.status == "running" %}<span class="tag" style="color:var(--warn)">đang chạy…</span>{% elif run.status == "failed" %}<span class="tag" style="color:var(--bad)">thất bại: {{ run.error }}</span>{% endif %}</p>
+{% endif %}
+{% set llm_final = run.counts.final - (run.counts.static if run.counts.static <= run.counts.final else 0) %}
+{% if run.counts.llm_kept > llm_final %}<p class="small muted">Ngưỡng lọc của sản phẩm (độ tin cậy, mức nghiêm trọng, trần số comment) bỏ bớt {{ run.counts.llm_kept - llm_final }} nhận xét AI đã qua kiểm chứng; eval chạy với ngưỡng nới hết nên không bị bỏ.</p>{% endif %}
+
+<h2>Từng vai đã làm gì</h2>
+<div class="scroll"><table>
+<thead><tr><th>Vai</th><th class="n">Lượt gọi</th><th class="n">Nhận xét thô</th><th class="n">Giữ sau kiểm chứng</th><th class="n">Bị loại</th><th class="n">Vào báo cáo</th><th class="n">Token vào / ra</th><th>Tóm tắt của vai</th></tr></thead>
+<tbody>
+{% for role, rs in run.role_stats.items() %}
+<tr>
+  <td><span class="tag {{ role }}">{{ role }}</span>{% if role in run.failed_roles %} <span style="color:var(--bad)">lỗi</span>{% endif %}</td>
+  <td class="n">{{ rs.calls or 0 }}</td><td class="n">{{ rs.raw or 0 }}</td><td class="n">{{ rs.kept or 0 }}</td>
+  <td class="n">{{ rs.removed or 0 }}</td><td class="n"><strong>{{ rs.final or 0 }}</strong></td>
+  <td class="n">{{ rs.tokens_in | num }} / {{ rs.tokens_out | num }}</td>
+  <td class="small">{{ run.summaries.get(role, "") }}</td>
+</tr>
+{% endfor %}
+</tbody></table></div>
+
+<h2>Nhận xét ({{ run.counts.final }})</h2>
+{% for agent, items in run.findings_by_agent.items() %}
+<h3>{% if agent in ["SE","QA","DevOps"] %}<span class="tag {{ agent }}">{{ agent }}</span>{% else %}<code>{{ agent }}</code>{% endif %} — {{ items | length }}</h3>
+<div class="scroll"><table>
+<thead><tr><th>Mức</th><th>Loại</th><th>Vị trí</th><th>Nhận xét</th><th>Ghim</th><th class="n">Tin cậy</th></tr></thead>
+<tbody>
+{% for f in items %}
+<tr>
+  <td class="sev-{{ f.severity }}">{{ f.severity }}</td>
+  <td>{{ f.category }}</td>
+  <td><code>{{ f.file }}:{{ f.line }}</code></td>
+  <td><strong>{{ f.title }}</strong><details><summary class="small">giải thích</summary><div class="small">{{ f.explanation }}</div>{% if f.suggested_fix %}<pre>{{ f.suggested_fix }}</pre>{% endif %}{% if f.existing_code %}<pre>{{ f.existing_code }}</pre>{% endif %}</details></td>
+  <td class="small muted">{{ f.anchor or "-" }}</td>
+  <td class="n">{{ (f.confidence * 100) | round }} %</td>
+</tr>
+{% endfor %}
+</tbody></table></div>
+{% else %}
+<div class="empty">Không có nhận xét nào.</div>
+{% endfor %}
+
+{% if run.removed %}
+<h2>Bị loại sau khi sinh ({{ run.removed | length }})</h2>
+<div class="scroll"><table>
+<thead><tr><th>Vai</th><th>Vị trí</th><th>Nhận xét</th><th>Căn cứ</th><th>Phần mềm kiểm lại</th></tr></thead>
+<tbody>
+{% for r in run.removed %}
+<tr><td><span class="tag {{ r.role }}">{{ r.role }}</span></td><td><code>{{ r.file }}:{{ r.line }}</code></td><td>{{ r.title }}</td><td>{{ r.ground }} <span class="small muted">{{ r.reason }}</span></td><td class="small">{{ r.check }}</td></tr>
+{% endfor %}
+</tbody></table></div>
+{% endif %}
+
+{% if run.skipped %}
+<h2>File không được review đầy đủ</h2>
+<ul>{% for s in run.skipped %}<li><code>{{ s.path }}</code> — {{ s.reason }} {{ s.detail }}</li>{% endfor %}</ul>
+{% endif %}
+{% endblock %}

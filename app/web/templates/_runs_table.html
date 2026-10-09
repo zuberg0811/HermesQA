@@ -1,0 +1,23 @@
+{% if runs %}
+<div class="scroll"><table>
+<thead><tr><th>Lúc</th><th>Nguồn</th><th>Repo / case</th><th>Vai</th><th class="n">Static</th><th class="n">AI thô → giữ</th><th class="n">Cuối</th><th class="n">Giây</th><th>Model</th><th></th></tr></thead>
+<tbody>
+{% for r in runs %}
+<tr>
+  <td class="small">{{ r.started_at[:19] | replace("T", " ") }}</td>
+  <td><span class="tag">{{ r.source }}</span>{% if r.status == "running" %} <span class="tag" style="color:var(--warn)">đang chạy</span>{% elif r.status == "failed" %} <span class="tag" style="color:var(--bad)">lỗi</span>{% endif %}</td>
+  <td>{{ r.eval_case or r.title or r.repo }}{% if r.pr_number %} <span class="muted">#{{ r.pr_number }}</span>{% endif %}
+      {% if r.failed_roles %}<span class="tag" style="color:var(--bad)">vai lỗi: {{ r.failed_roles | join(", ") }}</span>{% endif %}</td>
+  <td>{% for role in r.config.roles %}<span class="tag {{ role }}">{{ role }}</span> {% endfor %}</td>
+  <td class="n">{{ r.counts.static }}</td>
+  <td class="n">{{ r.counts.llm_raw }} → {{ r.counts.llm_kept }}</td>
+  <td class="n"><strong>{{ r.counts.final }}</strong></td>
+  <td class="n">{{ r.seconds }}</td>
+  <td class="small muted">{{ r.model }}</td>
+  <td><a href="/dashboard/runs/{{ r.run_id }}">chi tiết</a></td>
+</tr>
+{% endfor %}
+</tbody></table></div>
+{% else %}
+<div class="empty">Chưa có lần chạy nào được ghi. Chạy <code>python -m app.cli --repo . --base main --head HEAD</code> (hoặc eval) để có dữ liệu.</div>
+{% endif %}

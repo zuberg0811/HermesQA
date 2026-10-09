@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}HermesQA{% endblock %} · HermesQA</title>
+<script src="https://unpkg.com/htmx.org@1.9.12" defer></script>
+<style>
+  :root { --ink:#1f2933; --muted:#52606d; --line:#d9e2ec; --soft:#f5f8fb; --brand:#1d4e89; --ok:#2f855a; --warn:#b7791f; --bad:#c53030; }
+  * { box-sizing:border-box; }
+  body { margin:0; font:14.5px/1.55 "Segoe UI","Noto Sans",Arial,sans-serif; color:var(--ink); background:#fff; }
+  header { border-bottom:1px solid var(--line); background:#fff; position:sticky; top:0; z-index:5; }
+  .wrap { max-width:1180px; margin:0 auto; padding:0 20px; }
+  nav { display:flex; gap:4px; align-items:center; height:52px; }
+  nav .brand { font-weight:700; color:var(--brand); margin-right:18px; text-decoration:none; }
+  nav a { color:var(--muted); text-decoration:none; padding:8px 12px; border-radius:6px; }
+  nav a.active, nav a:hover { background:var(--soft); color:var(--ink); }
+  main { padding:24px 0 48px; }
+  h1 { font-size:22px; margin:0 0 6px; } h2 { font-size:17px; margin:28px 0 8px; color:var(--brand); }
+  h3 { font-size:15px; margin:18px 0 6px; }
+  p.lead { color:var(--muted); margin:0 0 16px; }
+  .cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:12px; margin:12px 0 20px; }
+  .card { border:1px solid var(--line); border-radius:8px; padding:12px 14px; background:#fff; }
+  .card .k { font-size:12px; color:var(--muted); text-transform:uppercase; letter-spacing:.06em; }
+  .card .v { font-size:24px; font-weight:700; margin-top:2px; }
+  .card .s { font-size:12px; color:var(--muted); }
+  table { width:100%; border-collapse:collapse; font-size:13.5px; margin:6px 0 14px; }
+  th { text-align:left; font-size:12px; letter-spacing:.04em; text-transform:uppercase; color:var(--muted); border-bottom:2px solid var(--line); padding:6px 8px; }
+  td { padding:6px 8px; border-bottom:1px solid var(--line); vertical-align:top; }
+  tr:nth-child(even) td { background:var(--soft); }
+  td.n, th.n { text-align:right; font-variant-numeric:tabular-nums; }
+  code { font:12.5px Consolas,"Cascadia Mono",monospace; background:#eef2f6; padding:1px 4px; border-radius:3px; }
+  .tag { display:inline-block; font-size:11.5px; padding:1px 7px; border-radius:10px; border:1px solid var(--line); color:var(--muted); }
+  .tag.SE { color:#1d4e89; border-color:#b6cdea; } .tag.QA { color:#6b46c1; border-color:#d6c6f2; } .tag.DevOps { color:#2f855a; border-color:#b8e0c6; }
+  .sev-critical { color:var(--bad); font-weight:600; } .sev-high { color:#c05621; font-weight:600; } .sev-medium { color:var(--warn); } .sev-low { color:var(--muted); }
+  .bar { height:8px; background:var(--soft); border-radius:4px; overflow:hidden; } .bar i { display:block; height:100%; background:var(--brand); }
+  .muted { color:var(--muted); } .small { font-size:12.5px; }
+  details { margin:6px 0; } summary { cursor:pointer; color:var(--brand); }
+  .empty { border:1px dashed var(--line); border-radius:8px; padding:18px; color:var(--muted); }
+  .scroll { overflow-x:auto; }
+  pre { background:#f7fafc; border:1px solid var(--line); border-radius:6px; padding:8px 10px; font-size:12.5px; overflow-x:auto; white-space:pre-wrap; }
+</style>
+</head>
+<body>
+<header><div class="wrap"><nav>
+  <a class="brand" href="/dashboard">HermesQA</a>
+  <a href="/dashboard" class="{{ 'active' if page == 'index' }}">Tổng quan</a>
+  <a href="/dashboard/agents" class="{{ 'active' if page == 'agents' }}">Agent</a>
+  <a href="/dashboard/runs" class="{{ 'active' if page == 'runs' }}">Lần chạy</a>
+</nav></div></header>
+<main><div class="wrap">
+{% block body %}{% endblock %}
+</div></main>
+</body>
+</html>
