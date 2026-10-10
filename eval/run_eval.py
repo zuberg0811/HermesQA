@@ -39,18 +39,37 @@ CONFIG_FLAGS = {
 TOKEN_RE = re.compile(r"tokens in=(\d+) out=(\d+)")
 
 
-def run_case(repo: str, branch: str, cid: str, config: str, out_dir: str) -> dict:
+def eval_env(profile: str | None = None) -> dict:
+    """Môi trường cho app.cli khi chạy eval. `profile` = tên profile LLM trong .env (LLM_<TÊN>_MODEL...),
+    truyền qua LLM_PROFILE để cùng một lệnh đo được nhiều model (Gemini, Muse Spark...) không phải sửa .env."""
+    env = dict(os.environ)
+    # Eval đo KHẢ NĂNG PHÁT HIỆN nên nới policy: giữ mọi severity, không lọc confidence.
+    env.update({"MIN_SEVERITY_TO_COMMENT": "low", "MIN_CONFIDENCE": "0.0",
+                "PYTHONIOENCODING": "utf-8"})
+    if profile:
+        env["LLM_PROFILE"] = profile
+    return env
+
+
+def resolve_model(profile: str | None) -> str:
+    """Hỏi app.config xem profile này ứng với model nào (lỗi sớm nếu .env thiếu LLM_<TÊN>_MODEL)."""
+    code = ("from app.config import settings; "
+            "print(settings.anthropic_model if settings.agent_backend == 'anthropic' else settings.llm_model)")
+    proc = subprocess.run([sys.executable, "-c", code], cwd=ROOT, env=eval_env(profile), capture_output=True,
+                          text=True, encoding="utf-8", errors="replace")
+    if proc.returncode != 0:
+        raise SystemExit(f"không nạp được cấu hình LLM (profile={profile or '-'}):\n{proc.stderr.strip()[-600:]}")
+    return proc.stdout.strip()
+
+
+def run_case(repo: str, branch: str, cid: str, config: str, out_dir: str, profile: str | None = None) -> dict:
     subprocess.run(["git", "-C", repo, "checkout", "-q", branch], check=True)
     out_json = os.path.join(out_dir, f"{cid}.json")
     out_md = os.path.join(out_dir, f"{cid}.md")
     cmd = [sys.executable, "-m", "app.cli", "--repo", repo, "--base", "main", "--head", branch,
            "--out", out_md, "--json", out_json,
            "--run-source", "eval", "--meta", os.path.join(out_dir, "_meta", f"{cid}.json"), *CONFIG_FLAGS[config]]
-
-    env = dict(os.environ)
-    # Eval đo KHẢ NĂNG PHÁT HIỆN nên nới policy: giữ mọi severity, không lọc confidence.
-    env.update({"MIN_SEVERITY_TO_COMMENT": "low", "MIN_CONFIDENCE": "0.0",
-                "PYTHONIOENCODING": "utf-8"})
+    env = eval_env(profile)
 
     t0 = time.time()
     try:
@@ -72,6 +91,8 @@ def run_case(repo: str, branch: str, cid: str, config: str, out_dir: str) -> dic
     rec = {"case": cid, "config": config, "seconds": round(elapsed, 1),
            "tokens_in": tokens_in, "tokens_out": tokens_out,
            "returncode": code}
+    if profile:
+        rec["profile"] = profile
     if code != 0:
         rec["error"] = (stderr or stdout)[-800:]
         # vẫn ghi findings rỗng để score.py tính là miss thay vì bỏ case
@@ -88,7 +109,14 @@ def main():
     ap.add_argument("--cases", help="chỉ chạy các case này (phân tách bằng dấu phẩy)")
     ap.add_argument("--limit", type=int, help="chỉ chạy N case đầu")
     ap.add_argument("--out", default=os.path.join("eval", "out"))
+    ap.add_argument("--profile", help="profile LLM trong .env (LLM_<TÊN>_MODEL...), VD: gemini | muse. "
+                                      "Nhớ đổi --out (VD eval/out-muse) để không trộn kết quả hai model")
     a = ap.parse_args()
+
+    model = resolve_model(a.profile)
+    print(f"model: {model}" + (f" (profile {a.profile})" if a.profile else ""))
+    if a.profile and os.path.normpath(a.out) == os.path.normpath(os.path.join("eval", "out")):
+        raise SystemExit("--profile cần đi kèm --out riêng (VD --out eval/out-muse) để không trộn với kết quả model mặc định")
 
     with open(a.truth, encoding="utf-8") as f:
         gt = json.load(f)
@@ -120,7 +148,7 @@ def main():
                 print(f"[{cfg} {i}/{len(cases)}] {cid}: đã có, bỏ qua")
                 continue
             print(f"[{cfg} {i}/{len(cases)}] {cid} ...", flush=True)
-            rec = run_case(repo, c["branch"], cid, cfg, out_dir)
+            rec = run_case(repo, c["branch"], cid, cfg, out_dir, a.profile)
             status = "OK" if rec["returncode"] == 0 else "LỖI"
             print(f"    -> {status} {rec['seconds']}s, tokens {rec['tokens_in']}/{rec['tokens_out']}", flush=True)
             runs[cid] = rec

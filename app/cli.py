@@ -46,7 +46,16 @@ def main():
     ap.add_argument("--roles", help="VD: SE,QA")
     ap.add_argument("--run-source", default="cli", help="nhãn nguồn trong run log: cli | eval")
     ap.add_argument("--no-runlog", action="store_true", help="không ghi nhật ký lần chạy (dashboard)")
+    ap.add_argument("--profile", help="profile LLM khai báo trong .env (LLM_<TÊN>_MODEL...), VD: gemini | muse; "
+                                      "mặc định: LLM_PROFILE hoặc LLM_BASE_URL/LLM_MODEL")
     a = ap.parse_args()
+
+    if a.profile:
+        try:
+            settings.use_profile(a.profile)
+        except ValueError as e:
+            raise SystemExit(f"--profile: {e}")
+    log.info("model: %s (%s)", _model_name(), settings.llm_profile or settings.agent_backend)
 
     if a.diff_file:
         diff = open(a.diff_file, encoding="utf-8").read()

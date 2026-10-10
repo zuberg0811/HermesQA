@@ -24,3 +24,4 @@ eval/out-multi-v3-rescored
 .firebaserc
 web/public/firebase-config.js
 .firebase/
+eval/out-*/

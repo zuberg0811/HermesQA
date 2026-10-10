@@ -49,6 +49,26 @@ python eval/rescore.py --src eval/out --dst eval/out-v2
 python eval/score.py --out eval/out-v2
 ```
 
+## Chạy với model khác (profile LLM)
+Để so sánh model, khai báo mỗi nhà cung cấp một bộ ba biến trong `.env` (mẫu trong `.env.example`):
+`LLM_<TÊN>_BASE_URL`, `LLM_<TÊN>_API_KEY`, `LLM_<TÊN>_MODEL` — ví dụ `LLM_GEMINI_*` cho Gemini và
+`LLM_MUSE_*` cho Muse Spark của Meta (`https://api.meta.ai/v1`, model `muse-spark-1.3`, tương thích OpenAI SDK).
+Mọi thứ khác (prompt, luật, kiểm chứng, ghim) giữ nguyên nên kết quả hai model so được với nhau.
+
+```bash
+python eval/run_eval.py --configs llm,both --profile muse --out eval/out-muse        # mỗi model một thư mục
+python eval/score.py --out eval/out-muse
+python eval/score.py --out eval/out-v3-rescored                                       # so với số Gemini đã chốt
+python -m app.cli --repo eval/dataset-repo --base main --head case/sqli-concat --skip-static --profile muse   # thử 1 case
+
+# Giám khảo phân loại báo động giả bằng model KHÁC model sinh (giảm thiên vị):
+LLM_PROFILE=gemini python eval/judge_fp.py --out eval/out-muse --config llm      # PowerShell: $env:LLM_PROFILE="gemini"
+```
+
+`run_eval.py` in tên model đã phân giải trước khi chạy và ghi `profile` vào `runs_<config>.json`; `--profile` bắt
+buộc đi kèm `--out` riêng để không trộn kết quả hai model. Dashboard (`/dashboard`) và `tools/publish_eval.py`
+tự nhận thư mục `eval/out-muse` như mọi `eval/out*`.
+
 ## Các thư mục kết quả
 | Thư mục | Nội dung |
 |---|---|
