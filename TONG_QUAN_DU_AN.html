@@ -1,0 +1,736 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Tổng quan HermesQA</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: một cột đọc ~72ch; các bước của luồng chạy xếp như gutter số dòng của một diff;
+   sơ đồ và bảng rộng nằm trong khung cuộn ngang riêng. */
+:root {
+  --bg: #f4f7f6;
+  --surface: #ffffff;
+  --sunken: #e9efed;
+  --fg: #15211f;
+  --fg-muted: #586a66;
+  --line: #d5dfdc;
+  --line-strong: #9fb1ad;
+  --accent: #0c6b66;
+  --accent-soft: #dcefec;
+  --ok: #1b7340;
+  --ok-soft: #dff2e5;
+  --warn: #8a5a00;
+  --warn-soft: #fbeccb;
+  --bad: #ad2a22;
+  --bad-soft: #fbe1de;
+  --font-body: "Be Vietnam Pro", "Segoe UI", system-ui, -apple-system, Arial, sans-serif;
+  --font-mono: "JetBrains Mono", Consolas, "Cascadia Mono", Menlo, monospace;
+  --measure: 46rem;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0e1514; --surface: #162120; --sunken: #1c2a28; --fg: #e3ecea; --fg-muted: #96a8a4;
+    --line: #283735; --line-strong: #4d625e; --accent: #5ccfc6; --accent-soft: #143633;
+    --ok: #63d394; --ok-soft: #14301f; --warn: #e6b656; --warn-soft: #33280f;
+    --bad: #ff8f85; --bad-soft: #3a1a17; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0e1514; --surface: #162120; --sunken: #1c2a28; --fg: #e3ecea; --fg-muted: #96a8a4;
+  --line: #283735; --line-strong: #4d625e; --accent: #5ccfc6; --accent-soft: #143633;
+  --ok: #63d394; --ok-soft: #14301f; --warn: #e6b656; --warn-soft: #33280f;
+  --bad: #ff8f85; --bad-soft: #3a1a17; color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-body);
+  font-size: 16px;
+  line-height: 1.65;
+}
+.page {
+  max-width: 60rem;
+  margin-inline: auto;
+  padding-inline: clamp(16px, 4vw, 40px);
+  padding-block: 40px 72px;
+  display: flex;
+  flex-direction: column;
+  gap: 56px;
+}
+section, header { display: flex; flex-direction: column; gap: 18px; min-width: 0; }
+h1, h2, h3, h4, p, ul, ol, dl, figure, table { margin: 0; }
+h1, h2, h3 { text-wrap: balance; line-height: 1.2; }
+h1 { font-size: clamp(2.2rem, 6vw, 3.2rem); font-weight: 700; letter-spacing: -0.02em; }
+h2 { font-size: 1.6rem; font-weight: 700; letter-spacing: -0.01em; padding-top: 20px; border-top: 2px solid var(--fg); }
+h3 { font-size: 1.12rem; font-weight: 600; margin-top: 10px; }
+p, li, dd { max-width: var(--measure); }
+ul, ol { padding-left: 1.25rem; display: flex; flex-direction: column; gap: 6px; }
+a { color: var(--accent); text-underline-offset: 3px; }
+a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
+code {
+  font-family: var(--font-mono);
+  font-size: 0.86em;
+  background: var(--sunken);
+  padding: 0.1em 0.35em;
+  border-radius: 4px;
+  overflow-wrap: anywhere;
+}
+strong { font-weight: 600; }
+
+.eyebrow {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--fg-muted);
+}
+.lead { font-size: 1.15rem; line-height: 1.6; }
+.muted { color: var(--fg-muted); }
+.small { font-size: 0.9rem; }
+
+.toc { display: flex; flex-direction: row; flex-wrap: wrap; gap: 6px 18px; padding: 0; list-style: none; font-size: 0.95rem; }
+
+/* Khung tóm tắt trạng thái */
+.now {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--accent);
+  padding: 18px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.now h3 { margin: 0; font-size: 0.8rem; font-family: var(--font-mono); text-transform: uppercase; letter-spacing: 0.06em; color: var(--accent); }
+.now ul { list-style: none; padding: 0; gap: 8px; }
+.now li { display: grid; grid-template-columns: 6.4rem 1fr; gap: 12px; align-items: baseline; }
+@media (max-width: 480px) { .now li { grid-template-columns: 1fr; gap: 2px; } }
+
+.chip {
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  border-radius: 3px;
+  white-space: nowrap;
+  justify-self: start;
+}
+.chip.ok { background: var(--ok-soft); color: var(--ok); }
+.chip.part { background: var(--warn-soft); color: var(--warn); }
+.chip.todo { background: var(--bad-soft); color: var(--bad); }
+
+/* Sơ đồ */
+figure { display: flex; flex-direction: column; gap: 10px; }
+.scroll { overflow-x: auto; border: 1px solid var(--line); background: var(--surface); }
+.scroll.flush { border: 0; background: none; }
+.diagram { display: block; min-width: 760px; width: 100%; height: auto; }
+figcaption { font-size: 0.9rem; color: var(--fg-muted); max-width: var(--measure); }
+.d-box { fill: var(--surface); stroke: var(--line-strong); stroke-width: 1.5; }
+.d-key { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 2; stroke-dasharray: 6 4; }
+.d-line { fill: none; stroke: var(--fg-muted); stroke-width: 1.5; }
+.d-arrow { fill: var(--fg-muted); }
+.d-t { fill: var(--fg); font-family: var(--font-body); font-size: 13px; font-weight: 600; }
+.d-s { fill: var(--fg-muted); font-family: var(--font-mono); font-size: 10.5px; }
+.d-l { fill: var(--fg); font-family: var(--font-body); font-size: 11px; }
+
+/* Các bước của luồng chạy, kiểu gutter số dòng */
+.steps { list-style: none; padding: 0; gap: 0; border-top: 1px solid var(--line); }
+.steps > li {
+  display: grid;
+  grid-template-columns: 3.2rem minmax(0, 1fr);
+  max-width: none;
+  border-bottom: 1px solid var(--line);
+}
+.steps .no {
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  color: var(--fg-muted);
+  text-align: right;
+  padding: 18px 12px 18px 0;
+  border-right: 1px solid var(--line);
+  font-variant-numeric: tabular-nums;
+}
+.steps .body { padding: 16px 0 18px 18px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.steps h4 { font-size: 1.02rem; font-weight: 600; line-height: 1.35; }
+.steps .where { font-family: var(--font-mono); font-size: 0.78rem; color: var(--fg-muted); overflow-wrap: anywhere; }
+.why { border-left: 3px solid var(--accent); padding-left: 12px; font-size: 0.95rem; }
+.why b { color: var(--accent); font-weight: 600; }
+
+/* Bảng */
+table { border-collapse: collapse; width: 100%; font-size: 0.92rem; }
+th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-size: 0.76rem; font-family: var(--font-mono); text-transform: uppercase; letter-spacing: 0.04em; color: var(--fg-muted); font-weight: 600; background: var(--sunken); white-space: nowrap; }
+td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+tr.best td { background: var(--accent-soft); }
+td code { white-space: nowrap; }
+table.wide { min-width: 720px; }
+
+.finding { display: flex; flex-direction: column; gap: 14px; padding: 0; list-style: none; }
+.finding > li { display: flex; flex-direction: column; gap: 4px; padding-left: 14px; border-left: 3px solid var(--line-strong); }
+.finding > li.key { border-left-color: var(--bad); }
+.finding h4 { font-size: 1rem; font-weight: 600; }
+
+.status { list-style: none; padding: 0; gap: 0; border-top: 1px solid var(--line); }
+.status li { display: grid; grid-template-columns: 6.4rem minmax(0, 1fr); gap: 4px 14px; padding: 12px 0; border-bottom: 1px solid var(--line); max-width: none; align-items: baseline; }
+.status .what { font-weight: 600; }
+.status .note { grid-column: 2; font-size: 0.92rem; color: var(--fg-muted); }
+@media (max-width: 480px) {
+  .status li { grid-template-columns: 1fr; }
+  .status .note { grid-column: 1; }
+}
+
+.timeline { display: grid; grid-template-columns: 6.5rem minmax(0, 1fr); gap: 10px 16px; font-size: 0.95rem; }
+.timeline dt { font-family: var(--font-mono); font-size: 0.82rem; color: var(--fg-muted); padding-top: 2px; }
+.timeline dd { margin: 0; }
+
+.glossary { display: grid; grid-template-columns: 11rem minmax(0, 1fr); gap: 8px 16px; font-size: 0.93rem; }
+.glossary dt { font-weight: 600; }
+.glossary dd { margin: 0; }
+@media (max-width: 560px) {
+  .glossary, .timeline { grid-template-columns: 1fr; gap: 2px; }
+  .glossary dd, .timeline dd { margin-bottom: 10px; }
+}
+footer { font-size: 0.85rem; color: var(--fg-muted); border-top: 1px solid var(--line); padding-top: 16px; }
+
+/* Bản in / PDF khổ A4 */
+@page { size: A4; margin: 16mm 14mm; }
+@media print {
+  :root { --bg: #ffffff; }
+  html { font-size: 10pt; }
+  body { font-size: 1rem; line-height: 1.5; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .lead { font-size: 1.1rem; }
+  td:first-child code { white-space: nowrap; }
+  .page { max-width: none; padding: 0; gap: 26px; }
+  section, header { gap: 12px; }
+  p, li, dd, figcaption { max-width: none; }
+  h1 { font-size: 26pt; }
+  h2 { font-size: 15pt; padding-top: 12px; }
+  h3 { font-size: 11.5pt; }
+  h2, h3, h4 { break-after: avoid; }
+  .scroll { overflow: visible; }
+  .diagram { min-width: 0; }
+  table { font-size: 8.5pt; }
+  table.wide { min-width: 0; }
+  th { font-size: 7pt; }
+  th, td { padding: 5px 7px; }
+  td code { white-space: normal; }
+  tr, .steps > li, .finding > li, .status li, .now, figure, .why { break-inside: avoid; }
+  .steps .body { padding: 10px 0 12px 14px; gap: 5px; }
+  .steps .no { padding: 12px 10px 12px 0; }
+  .status li { padding: 8px 0; }
+}
+</style>
+</head>
+<body>
+<div class="page">
+
+<header>
+  <p class="eyebrow">Đồ án tốt nghiệp · Tổng quan dự án · Cập nhật 01/10/2026</p>
+  <h1>HermesQA</h1>
+  <p class="lead">HermesQA là bot tự động review pull request (PR) trên GitHub. Khi có PR mới, nó đọc phần code thay đổi, tìm lỗi bằng hai nguồn, rồi comment vào đúng dòng code có vấn đề. Nguồn thứ nhất là năm công cụ static analysis chạy trong một sandbox cô lập. Nguồn thứ hai là LLM đóng ba vai: kỹ sư phần mềm (SE), kiểm thử (QA) và vận hành (DevOps).</p>
+
+  <div class="now">
+    <h3>Hiện đang ở đâu</h3>
+    <ul>
+      <li><span class="chip ok">Đã xong</span><span>Phần lõi chạy được từ đầu đến cuối ở chế độ offline qua dòng lệnh: đọc diff, quét static trong sandbox, LLM ba vai, lọc kết quả, sinh báo cáo.</span></li>
+      <li><span class="chip ok">Đã xong</span><span>Thực nghiệm trên 35 PR Python và 18 PR đa ngôn ngữ (JavaScript, TypeScript, React, Go, Java).</span></li>
+      <li><span class="chip part">Dở dang</span><span>Hai lượt thực nghiệm mới nhất chưa commit và chưa đưa vào báo cáo. Bước gộp kết quả static với LLM đang làm tăng số báo nhầm.</span></li>
+      <li><span class="chip todo">Chưa làm</span><span>Chạy thử với GitHub App thật: toàn bộ nhánh webhook, hàng đợi, đăng comment lên PR chưa từng chạy đầu-cuối.</span></li>
+    </ul>
+  </div>
+
+  <ul class="toc">
+    <li><a href="#muc-tieu">1. Dự án nhắm đến điều gì</a></li>
+    <li><a href="#luong-chay">2. Luồng chạy từ A đến Z</a></li>
+    <li><a href="#thanh-phan">3. Từng phần và mục đích</a></li>
+    <li><a href="#thuc-nghiem">4. Thực nghiệm và kết quả</a></li>
+    <li><a href="#giai-doan">5. Giai đoạn hiện tại</a></li>
+    <li><a href="#thuat-ngu">6. Thuật ngữ</a></li>
+  </ul>
+</header>
+
+<section id="muc-tieu">
+  <h2>1. Dự án nhắm đến điều gì</h2>
+  <p>Review code thủ công tốn thời gian của người có kinh nghiệm, chất lượng không đều giữa các reviewer, và người review dễ bỏ sót lỗi bảo mật khi đang tập trung vào logic nghiệp vụ. Hai cách tự động hoá hiện có đều thiếu một nửa:</p>
+  <ul>
+    <li><strong>Static analysis</strong> (semgrep, ruff…) rẻ và cho kết quả giống nhau mỗi lần chạy, nhưng chỉ bắt được các mẫu lỗi đã định nghĩa sẵn. Nó không biết thay đổi này thiếu test cho trường hợp nào.</li>
+    <li><strong>LLM</strong> hiểu ngữ cảnh và nhận xét được về thiết kế, test, nhưng có thể bịa ra lỗi không tồn tại, báo sai số dòng, và tốn token.</li>
+  </ul>
+  <p>HermesQA kết hợp cả hai, với ba điểm đồ án muốn đóng góp:</p>
+  <ol>
+    <li><strong>Review theo ba vai.</strong> Mỗi vai có một bộ hướng dẫn riêng (checklist, thang mức độ nghiêm trọng, quy tắc chống nói thừa), và chỉ được gọi khi PR có loại file liên quan.</li>
+    <li><strong>Sandbox an toàn.</strong> Code trong PR đến từ người lạ nên không bao giờ được thực thi. Chỉ các công cụ static đọc nó, trong một container không có mạng.</li>
+    <li><strong>Chống LLM bịa lỗi.</strong> Bốn lớp kiểm tra xếp chồng, trong đó có bước self-verify: LLM tự kiểm chứng lại phát hiện của chính nó.</li>
+  </ol>
+  <p>Giả thuyết cần kiểm chứng bằng thực nghiệm: <strong>kết hợp static với LLM cho kết quả tốt hơn dùng riêng từng nguồn</strong>. Số liệu hiện tại chưa ủng hộ giả thuyết này (xem <a href="#thuc-nghiem">mục 4</a>).</p>
+  <p class="muted">Về lâu dài, README định hướng sản phẩm thành một micro-SaaS: hỗ trợ thêm GitLab và Bitbucket, dashboard web, học từ phản hồi của lập trình viên, nhiều khách hàng dùng chung và tính phí. Chưa phần nào trong số này được bắt đầu.</p>
+</section>
+
+<section id="luong-chay">
+  <h2>2. Luồng chạy từ A đến Z</h2>
+  <p>Hệ thống có ba tiến trình: một API nhận webhook, một hàng đợi Redis, và một worker làm toàn bộ việc review. Worker gọi ra ba nơi: sandbox Docker, LLM, và cơ sở dữ liệu Postgres.</p>
+
+  <figure>
+    <div class="scroll">
+      <svg class="diagram" viewBox="0 0 910 296" role="img" aria-label="GitHub gửi webhook tới API, API xếp job vào hàng đợi Redis, worker lấy job, gọi sandbox Docker, LLM và Postgres, rồi đăng review và check run ngược lại GitHub.">
+        <defs>
+          <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path class="d-arrow" d="M0 0 L10 5 L0 10 z"/>
+          </marker>
+        </defs>
+
+        <!-- đường trả kết quả về GitHub -->
+        <polyline class="d-line" points="815,50 815,24 95,24 95,50" marker-end="url(#arrow)"/>
+        <text class="d-l" x="455" y="16" text-anchor="middle">PR review (comment theo dòng) + kết quả check run</text>
+
+        <!-- hàng 1 -->
+        <rect class="d-box" x="20" y="50" width="150" height="56" rx="4"/>
+        <text class="d-t" x="95" y="74" text-anchor="middle">GitHub</text>
+        <text class="d-s" x="95" y="92" text-anchor="middle">pull request</text>
+
+        <rect class="d-box" x="250" y="50" width="150" height="56" rx="4"/>
+        <text class="d-t" x="325" y="74" text-anchor="middle">API (FastAPI)</text>
+        <text class="d-s" x="325" y="92" text-anchor="middle">app/main.py</text>
+
+        <rect class="d-box" x="480" y="50" width="150" height="56" rx="4"/>
+        <text class="d-t" x="555" y="74" text-anchor="middle">Hàng đợi Redis</text>
+        <text class="d-s" x="555" y="92" text-anchor="middle">queue "reviews"</text>
+
+        <rect class="d-box" x="740" y="50" width="150" height="56" rx="4"/>
+        <text class="d-t" x="815" y="74" text-anchor="middle">Worker</text>
+        <text class="d-s" x="815" y="92" text-anchor="middle">app/worker.py</text>
+
+        <line class="d-line" x1="170" y1="78" x2="250" y2="78" marker-end="url(#arrow)"/>
+        <text class="d-l" x="210" y="70" text-anchor="middle">webhook</text>
+        <line class="d-line" x1="400" y1="78" x2="480" y2="78" marker-end="url(#arrow)"/>
+        <text class="d-l" x="440" y="70" text-anchor="middle">xếp job</text>
+        <line class="d-line" x1="630" y1="78" x2="740" y2="78" marker-end="url(#arrow)"/>
+        <text class="d-l" x="685" y="70" text-anchor="middle">lấy job</text>
+
+        <!-- worker gọi xuống -->
+        <line class="d-line" x1="815" y1="106" x2="815" y2="210" marker-end="url(#arrow)"/>
+        <line class="d-line" x1="325" y1="160" x2="815" y2="160"/>
+        <line class="d-line" x1="325" y1="160" x2="325" y2="210" marker-end="url(#arrow)"/>
+        <line class="d-line" x1="555" y1="160" x2="555" y2="210" marker-end="url(#arrow)"/>
+        <text class="d-l" x="333" y="190">file trong diff</text>
+        <text class="d-l" x="563" y="190">diff + ngữ cảnh</text>
+        <text class="d-l" x="823" y="190">lưu kết quả</text>
+
+        <!-- hàng 2 -->
+        <rect class="d-key" x="250" y="210" width="150" height="66" rx="4"/>
+        <text class="d-t" x="325" y="231" text-anchor="middle">Sandbox Docker</text>
+        <text class="d-s" x="325" y="248" text-anchor="middle">5 công cụ static</text>
+        <text class="d-s" x="325" y="264" text-anchor="middle">--network none</text>
+
+        <rect class="d-box" x="480" y="210" width="150" height="66" rx="4"/>
+        <text class="d-t" x="555" y="231" text-anchor="middle">LLM</text>
+        <text class="d-s" x="555" y="248" text-anchor="middle">vai SE · QA · DevOps</text>
+        <text class="d-s" x="555" y="264" text-anchor="middle">+ self-verify</text>
+
+        <rect class="d-box" x="740" y="210" width="150" height="66" rx="4"/>
+        <text class="d-t" x="815" y="231" text-anchor="middle">Postgres</text>
+        <text class="d-s" x="815" y="248" text-anchor="middle">lịch sử review</text>
+        <text class="d-s" x="815" y="264" text-anchor="middle">ghi nhớ theo repo</text>
+      </svg>
+    </div>
+    <figcaption>Đường đi của một PR. Khung nét đứt là ranh giới cô lập: code của PR chỉ được đọc bên trong đó, không có đường ra mạng. Chế độ offline (<code>app/cli.py</code>) bỏ qua hàng trên cùng và Postgres: nó lấy diff giữa hai nhánh git ở máy local rồi chạy cùng các bước sandbox, LLM và lọc kết quả.</figcaption>
+  </figure>
+
+  <h3>Mười một bước, theo đúng thứ tự trong mã</h3>
+  <ol class="steps">
+    <li>
+      <span class="no">1</span>
+      <div class="body">
+        <h4>GitHub gửi webhook khi PR thay đổi</h4>
+        <p>Khi một PR được mở, có commit mới, được mở lại, hoặc chuyển từ bản nháp sang sẵn sàng review, GitHub gọi <code>POST /webhook/github</code> kèm thông tin PR.</p>
+        <p class="why"><b>Mục đích:</b> bot tự chạy mỗi lần PR đổi, không ai phải bấm gì.</p>
+      </div>
+    </li>
+    <li>
+      <span class="no">2</span>
+      <div class="body">
+        <h4>API xác thực chữ ký rồi xếp việc vào hàng đợi</h4>
+        <span class="where">app/main.py</span>
+        <p>API tính lại mã HMAC SHA-256 trên nội dung nhận được bằng khoá bí mật chung với GitHub. Sai chữ ký thì trả 401. Sự kiện không phải pull request và PR còn ở dạng nháp bị bỏ qua. Phần còn lại được gói thành một job (repo, số PR, mã commit, mã cài đặt App) đẩy vào hàng đợi Redis, rồi API trả lời ngay.</p>
+        <p class="why"><b>Mục đích:</b> GitHub cắt webhook sau 10 giây, còn một lần review mất 1–3 phút, nên phần nhận và phần xử lý buộc phải tách nhau. Chữ ký HMAC chặn người ngoài giả làm GitHub để bắt bot chạy.</p>
+      </div>
+    </li>
+    <li>
+      <span class="no">3</span>
+      <div class="body">
+        <h4>Worker nhận job và báo "đang chạy" lên PR</h4>
+        <span class="where">app/worker.py · app/github_app.py</span>
+        <p>Worker lấy job khỏi hàng đợi (giới hạn 15 phút mỗi job). Nó ký một JWT bằng private key của GitHub App để đổi lấy installation token ngắn hạn, rồi tạo một check run tên "HermesQA Review" ở trạng thái <code>in_progress</code>.</p>
+        <p class="why"><b>Mục đích:</b> người mở PR thấy ngay bot đang làm việc. Token ngắn hạn chỉ có quyền trên repo đã cài App, nên nếu lộ thì thiệt hại có giới hạn.</p>
+      </div>
+    </li>
+    <li>
+      <span class="no">4</span>
+      <div class="body">
+        <h4>Clone đúng commit của PR, đọc cấu hình của repo</h4>
+        <span class="where">app/worker.py</span>
+        <p>Worker tải riêng commit đầu của PR với <code>--depth 1</code>, checkout, rồi gỡ remote khỏi thư mục <code>.git</code>. Sau đó đọc file <code>.hermesqa.yml</code> ở gốc repo nếu có: vai nào được bật, file nào bỏ qua, convention của team, số comment tối đa, có chặn merge khi gặp lỗi critical hay không.</p>
+        <p class="why"><b>Mục đích:</b> công cụ static và phần lấy ngữ cảnh cần file thật trên đĩa. Gỡ remote để token không nằm lại trong thư mục mà sandbox sắp đọc.</p>
+      </div>
+    </li>
+    <li>
+      <span class="no">5</span>
+      <div class="body">
+        <h4>Lấy diff và lọc file</h4>
+        <span class="where">app/review/diff_utils.py</span>
+        <p>Worker lấy diff của PR qua GitHub API và tách thành từng file. File khớp danh sách bỏ qua, file nhị phân và file bị xoá bị loại. Với mỗi file còn lại, hệ thống ghi nhớ những số dòng phía bản mới có mặt trong diff. Nếu không còn file nào, check run kết thúc <code>success</code> và dừng ở đây.</p>
+        <p class="why"><b>Mục đích:</b> mọi bước sau chỉ xét phần thay đổi. Danh sách số dòng này về sau quyết định comment được phép đặt ở đâu, vì GitHub chỉ nhận comment vào dòng nằm trong diff.</p>
+      </div>
+    </li>
+    <li>
+      <span class="no">6</span>
+      <div class="body">
+        <h4>Quét static trong sandbox</h4>
+        <span class="where">app/sandbox.py · runner/run_static.sh · app/review/static_tools.py</span>
+        <p>Worker ghi danh sách file thay đổi ra <code>targets.txt</code> rồi khởi chạy container <code>hermesqa-runner</code>. Bên trong, năm công cụ chạy lần lượt (semgrep, bandit, gitleaks, hadolint, ruff) và ghi kết quả JSON ra thư mục <code>/out</code>. Worker đọc các file JSON đó, chuẩn hoá về một cấu trúc chung gọi là <code>Finding</code> (file, dòng, mức độ, loại, mô tả, độ tin cậy), và chỉ giữ finding thuộc file thay đổi. Trạng thái từng công cụ (chạy được, thất bại, không áp dụng) được ghi lại để in ở đầu báo cáo.</p>
+        <p class="why"><b>Mục đích:</b> bắt các mẫu lỗi đã biết mà không tốn token, và cùng đầu vào thì luôn cho cùng kết quả. Sandbox bảo đảm một PR chứa mã độc không làm gì được hệ thống.</p>
+      </div>
+    </li>
+    <li>
+      <span class="no">7</span>
+      <div class="body">
+        <h4>Chọn vai cần chạy</h4>
+        <span class="where">app/review/router.py</span>
+        <p>PR có sửa code ứng dụng thì gọi SE và QA. PR có đụng tới file hạ tầng (Dockerfile, workflow CI, <code>requirements</code>, <code>package.json</code>, Terraform…) thì gọi DevOps. PR chỉ sửa tài liệu thì chỉ SE xem qua. Kết quả được giao với danh sách vai bật trong <code>.hermesqa.yml</code>.</p>
+        <p class="why"><b>Mục đích:</b> tiết kiệm token. PR chỉ sửa Dockerfile không cần hỏi vai QA.</p>
+      </div>
+    </li>
+    <li>
+      <span class="no">8</span>
+      <div class="body">
+        <h4>Từng vai review bằng LLM</h4>
+        <span class="where">app/review/agent.py · app/skills/&lt;vai&gt;/SKILL.md</span>
+        <p>Mỗi vai là một lần gọi LLM. File <code>SKILL.md</code> của vai làm system prompt. Phần câu hỏi gồm: tiêu đề và mô tả PR, convention của repo, ghi nhớ từ các lần review trước, tóm tắt những gì static đã bắt kèm yêu cầu không lặp lại, diff của từng file (tối đa 25 file) cùng 30 dòng xung quanh mỗi chỗ sửa có in sẵn số dòng, và một khuôn JSON bắt buộc cho câu trả lời. LLM trả về một câu tóm tắt và danh sách finding.</p>
+        <p class="why"><b>Mục đích:</b> bổ sung những thứ công cụ static không thấy được: lỗi logic, thiếu test, thiết kế kém. In sẵn số dòng và ép khuôn JSON để LLM khó báo sai vị trí và kết quả xử lý được bằng máy.</p>
+      </div>
+    </li>
+    <li>
+      <span class="no">9</span>
+      <div class="body">
+        <h4>Self-verify: LLM kiểm chứng lại chính nó</h4>
+        <span class="where">app/review/agent.py</span>
+        <p>Nếu một vai có finding, danh sách đó được gửi lại cho cùng model kèm code, lần này với lời dặn đóng vai reviewer cấp cao: bỏ finding không phải vấn đề thật, sửa số dòng lệch, bỏ finding trùng, cập nhật độ tin cậy. Nếu lần gọi này lỗi, hệ thống giữ kết quả ban đầu.</p>
+        <p class="why"><b>Mục đích:</b> giảm lỗi bịa. Đây là cơ chế được coi là đóng góp chính của đồ án, nhưng thực nghiệm chưa đo được lợi ích của nó (<a href="#thuc-nghiem">mục 4</a>).</p>
+      </div>
+    </li>
+    <li>
+      <span class="no">10</span>
+      <div class="body">
+        <h4>Gộp, lọc và ra kết luận</h4>
+        <span class="where">app/review/postprocess.py</span>
+        <p>Finding của static và của LLM được gộp lại. Hai finding cùng file, lệch nhau không quá 2 dòng và cùng loại thì chỉ giữ một, ưu tiên bản của static. Tiếp theo là chính sách lọc: bỏ finding có độ tin cậy dưới 0,6 hoặc mức độ dưới <code>medium</code>; dòng được báo phải nằm trong diff (lệch tối đa 3 dòng thì kéo về dòng gần nhất); tối đa 15 comment gắn vào dòng, phần còn lại đưa vào danh sách phụ. Cuối cùng là kết luận của check run: <code>failure</code> nếu có lỗi critical và repo bật chặn merge, <code>neutral</code> nếu có lỗi critical hoặc high, còn lại <code>success</code>.</p>
+        <p class="why"><b>Mục đích:</b> PR không bị ngập comment, không có comment trỏ vào dòng không tồn tại, và team tự quyết bot có được chặn merge hay không.</p>
+      </div>
+    </li>
+    <li>
+      <span class="no">11</span>
+      <div class="body">
+        <h4>Đăng kết quả, lưu lại, dọn dẹp</h4>
+        <span class="where">app/review/report.py · app/github_app.py · app/memory.py</span>
+        <p>Worker sinh báo cáo Markdown đầy đủ, đăng một PR review gồm phần tóm tắt và các comment theo dòng (yêu cầu sửa nếu kết luận là <code>failure</code>, còn lại chỉ là nhận xét), đóng check run với kết luận ở bước 10, và lưu lượt review vào Postgres. Nếu GitHub từ chối comment theo dòng, worker gửi lại chỉ phần tóm tắt. Thư mục làm việc luôn được xoá khi kết thúc. Nếu có lỗi giữa chừng, check run đóng ở trạng thái <code>neutral</code> kèm thông báo lỗi, để bot hỏng không chặn nhầm việc merge.</p>
+        <p class="why"><b>Mục đích:</b> kết quả xuất hiện ngay tại nơi lập trình viên đang làm việc, và có lịch sử để tra lại.</p>
+      </div>
+    </li>
+  </ol>
+</section>
+
+<section id="thanh-phan">
+  <h2>3. Từng phần và mục đích</h2>
+
+  <h3>Ba vai review</h3>
+  <div class="scroll flush">
+    <table>
+      <thead><tr><th>Vai</th><th>Câu hỏi nó trả lời</th><th>Xem những gì</th></tr></thead>
+      <tbody>
+        <tr><td><strong>SE</strong></td><td>Thay đổi này có đưa bug hoặc nợ kỹ thuật vào nhánh chính không?</td><td>Lỗi logic và điều kiện biên, bảo mật ngoài phần static đã báo, hiệu năng, xử lý lỗi, thiết kế, thay đổi làm vỡ API.</td></tr>
+        <tr><td><strong>QA</strong></td><td>Điều gì có thể làm thay đổi này hỏng khi chạy thật, và có test nào bắt được không?</td><td>Test cho phần mới, trường hợp biên còn thiếu, chất lượng test (assert yếu, test bị skip hoặc xoá), rủi ro hồi quy.</td></tr>
+        <tr><td><strong>DevOps</strong></td><td>Thay đổi này có build, deploy và chạy an toàn không?</td><td>Dockerfile, CI/CD, cấu hình và secret, Kubernetes/Terraform, dependency, khả năng vận hành.</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>Mỗi file <code>SKILL.md</code> dài khoảng 55 dòng, gồm checklist bắt buộc, định nghĩa bốn mức độ (critical, high, medium, low) và quy tắc chống nhiễu: tối đa 8 finding mỗi vai, không chắc thì bỏ, không góp ý phong cách cá nhân.</p>
+
+  <h3>Năm công cụ static</h3>
+  <div class="scroll flush">
+    <table>
+      <thead><tr><th>Công cụ</th><th>Bắt được gì</th></tr></thead>
+      <tbody>
+        <tr><td><code>semgrep</code></td><td>Mẫu lỗi bảo mật và logic trên nhiều ngôn ngữ (SQL injection, command injection…). Chỉ nạp bộ luật của ngôn ngữ có mặt trong diff.</td></tr>
+        <tr><td><code>bandit</code></td><td>Lỗi bảo mật riêng của Python (<code>shell=True</code>, <code>eval</code>, MD5…).</td></tr>
+        <tr><td><code>gitleaks</code></td><td>Khoá API và mật khẩu bị viết thẳng vào code.</td></tr>
+        <tr><td><code>hadolint</code></td><td>Lỗi và thói quen xấu trong Dockerfile.</td></tr>
+        <tr><td><code>ruff</code></td><td>Lỗi Python từ hình thức (import thừa) đến lỗi thật (biến chưa định nghĩa, so sánh <code>None</code> bằng <code>==</code>, <code>except</code> trống). Nhóm sau được xếp loại bug thay vì style.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>Sandbox: vì sao code của PR không làm hại được hệ thống</h3>
+  <div class="scroll flush">
+    <table>
+      <thead><tr><th>Rủi ro</th><th>Biện pháp trong mã</th></tr></thead>
+      <tbody>
+        <tr><td>Code độc trong PR được chạy</td><td>Không bước nào thực thi code của PR. Công cụ static chỉ đọc file.</td></tr>
+        <tr><td>Công cụ bị lợi dụng để gửi dữ liệu ra ngoài</td><td>Container chạy với <code>--network none</code>. Hệ quả: bộ luật semgrep phải nạp sẵn vào image lúc build.</td></tr>
+        <tr><td>Leo thang đặc quyền</td><td>Bỏ toàn bộ capability, bật <code>no-new-privileges</code>.</td></tr>
+        <tr><td>Vắt kiệt tài nguyên máy chủ</td><td>Giới hạn 2 CPU, 2 GB RAM, 256 tiến trình, tối đa 600 giây.</td></tr>
+        <tr><td>Sửa mã nguồn trong lúc phân tích</td><td>Thư mục mã nguồn được gắn ở chế độ chỉ đọc.</td></tr>
+        <tr><td>Lộ token GitHub</td><td>Token ngắn hạn, gỡ khỏi <code>.git</code> ngay sau khi clone.</td></tr>
+        <tr><td>Webhook giả</td><td>Chữ ký HMAC SHA-256, so sánh bằng <code>compare_digest</code> để tránh dò theo thời gian phản hồi.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>Bốn lớp chống LLM bịa lỗi</h3>
+  <ol>
+    <li><strong>Ràng buộc đầu vào.</strong> Prompt in sẵn số dòng thật bên cạnh từng dòng code và yêu cầu chỉ báo dòng nằm trong diff.</li>
+    <li><strong>Self-verify.</strong> Lượt gọi thứ hai để loại finding sai và sửa số dòng (bước 9).</li>
+    <li><strong>Kiểm tra số dòng bằng mã.</strong> Finding trỏ vào dòng ngoài diff quá 3 dòng không được gắn comment, chỉ nằm trong danh sách phụ.</li>
+    <li><strong>Ưu tiên static khi trùng.</strong> Hai nguồn cùng báo một chỗ thì giữ bản của static.</li>
+  </ol>
+  <p>Ngoài ra còn ngưỡng độ tin cậy 0,6 và trần 15 comment mỗi PR. Lớp 1, 3 và trần comment là kiểm tra tất định. Lớp 2 và lớp 4 là hai chỗ thực nghiệm cho thấy chưa hiệu quả.</p>
+
+  <h3>Bản đồ mã nguồn</h3>
+  <p>Khoảng 1.000 dòng Python trong <code>app/</code>, 1.100 dòng cho bộ thực nghiệm trong <code>eval/</code>, và 220 dòng test.</p>
+  <div class="scroll flush">
+    <table>
+      <thead><tr><th>File</th><th>Việc của nó</th></tr></thead>
+      <tbody>
+        <tr><td><code>app/main.py</code></td><td>Nhận webhook, kiểm chữ ký, xếp job.</td></tr>
+        <tr><td><code>app/worker.py</code></td><td>Điều phối toàn bộ một lần review (bước 3 đến 11).</td></tr>
+        <tr><td><code>app/cli.py</code></td><td>Chạy cùng pipeline trên repo local, không cần GitHub. Dùng để phát triển và chạy thực nghiệm.</td></tr>
+        <tr><td><code>app/github_app.py</code></td><td>Xác thực GitHub App, lấy diff, đăng review, tạo và đóng check run.</td></tr>
+        <tr><td><code>app/sandbox.py</code></td><td>Khởi chạy container quét static với các ràng buộc an toàn.</td></tr>
+        <tr><td><code>app/memory.py</code></td><td>Lưu lịch sử review và ghi nhớ theo repo vào Postgres.</td></tr>
+        <tr><td><code>app/review/agent.py</code></td><td>Dựng prompt, gọi LLM, ép câu trả lời về JSON, self-verify. Có hai backend: API kiểu OpenAI và Hermes Agent qua dòng lệnh.</td></tr>
+        <tr><td><code>app/review/diff_utils.py</code></td><td>Tách diff, tính dòng nào được comment, lấy ngữ cảnh quanh chỗ sửa.</td></tr>
+        <tr><td><code>app/review/router.py</code></td><td>Chọn vai theo loại file.</td></tr>
+        <tr><td><code>app/review/static_tools.py</code></td><td>Chuẩn hoá kết quả năm công cụ, báo công cụ nào thất bại.</td></tr>
+        <tr><td><code>app/review/postprocess.py</code></td><td>Gộp trùng, áp chính sách lọc, soạn comment, ra kết luận.</td></tr>
+        <tr><td><code>app/review/report.py</code></td><td>Sinh báo cáo Markdown và phần tóm tắt đăng lên PR.</td></tr>
+        <tr><td><code>runner/</code></td><td>Image sandbox và script chạy năm công cụ.</td></tr>
+        <tr><td><code>eval/</code></td><td>Sinh dataset, chạy thực nghiệm, chấm điểm.</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section id="thuc-nghiem">
+  <h2>4. Thực nghiệm và kết quả</h2>
+  <p>Không có bộ dữ liệu chuẩn cho bài toán này nên đồ án tự sinh. <code>eval/make_dataset.py</code> tạo một repo Python sạch và 35 nhánh, mỗi nhánh cài đúng một lỗi đã biết (tổng 36 vị trí lỗi: 13 bảo mật, 8 DevOps, 7 bug, 4 test, 4 style và hiệu năng). Vị trí lỗi được tính tự động thành đáp án. <code>eval/run_eval.py</code> chạy HermesQA trên từng nhánh theo từng cấu hình, và <code>eval/score.py</code> so kết quả với đáp án.</p>
+  <p>Một finding được tính là đúng khi cùng file, lệch không quá 3 dòng và đúng loại lỗi so với một đáp án chưa được khớp. Mọi finding còn lại bị tính là báo nhầm, kể cả khi nó là nhận xét hợp lý nằm ngoài đáp án. Vì vậy precision ở đây là cận dưới. Khi chạy thực nghiệm, ngưỡng lọc của sản phẩm được nới hết để đo khả năng phát hiện.</p>
+
+  <h3>Bộ Python: 35 PR, 36 lỗi</h3>
+  <div class="scroll flush">
+    <table class="wide">
+      <thead>
+        <tr><th>Cấu hình</th><th class="n">Đúng</th><th class="n">Báo nhầm</th><th class="n">Bỏ sót</th><th class="n">Precision</th><th class="n">Recall</th><th class="n">F1</th><th class="n">Giây/PR</th><th class="n">Token/PR</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><code>static</code> · chỉ công cụ static</td><td class="n">23</td><td class="n">26</td><td class="n">13</td><td class="n">46,9 %</td><td class="n">63,9 %</td><td class="n">54,1 %</td><td class="n">101,4</td><td class="n">0</td></tr>
+        <tr class="best"><td><code>llm</code> · chỉ LLM ba vai</td><td class="n">34</td><td class="n">27</td><td class="n">2</td><td class="n">55,7 %</td><td class="n">94,4 %</td><td class="n">70,1 %</td><td class="n">13,3</td><td class="n">7.229</td></tr>
+        <tr><td><code>both</code> · kết hợp (mặc định của sản phẩm)</td><td class="n">35</td><td class="n">61</td><td class="n">1</td><td class="n">36,5 %</td><td class="n">97,2 %</td><td class="n">53,0 %</td><td class="n">119,2</td><td class="n">7.552</td></tr>
+        <tr><td><code>llm_noverify</code> · LLM, tắt self-verify</td><td class="n">34</td><td class="n">28</td><td class="n">2</td><td class="n">54,8 %</td><td class="n">94,4 %</td><td class="n">69,4 %</td><td class="n">7,0</td><td class="n">3.324</td></tr>
+        <tr><td><code>llm</code> chạy lại lần hai</td><td class="n">33</td><td class="n">26</td><td class="n">3</td><td class="n">55,9 %</td><td class="n">91,7 %</td><td class="n">69,5 %</td><td class="n">19,9</td><td class="n">7.163</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="small muted">Số liệu được tính lại ngày 01/10/2026 từ các file kết quả đang có trên máy, bằng chính hàm chấm của <code>eval/score.py</code>. Hai lượt có ghi chú: ở <code>both</code>, case <code>truthy-or-bug</code> bị ghi nhận quá thời gian nên giây/PR tính trên 34 lượt; ở lần chạy lại <code>llm</code>, case <code>cmd-shell-true</code> có một vai bị lỗi nên kết quả case đó không đầy đủ.</p>
+
+  <h3>Bắt được theo nhóm lỗi (bộ Python)</h3>
+  <div class="scroll flush">
+    <table>
+      <thead><tr><th>Nhóm</th><th class="n">static</th><th class="n">llm</th><th class="n">both</th></tr></thead>
+      <tbody>
+        <tr><td>Bảo mật</td><td class="n">12/13</td><td class="n">12/13</td><td class="n">12/13</td></tr>
+        <tr><td>DevOps</td><td class="n">6/8</td><td class="n">8/8</td><td class="n">8/8</td></tr>
+        <tr><td>Bug</td><td class="n">4/7</td><td class="n">6/7</td><td class="n">7/7</td></tr>
+        <tr><td>Test</td><td class="n">0/4</td><td class="n">4/4</td><td class="n">4/4</td></tr>
+        <tr><td>Style</td><td class="n">1/3</td><td class="n">3/3</td><td class="n">3/3</td></tr>
+        <tr><td>Hiệu năng</td><td class="n">0/1</td><td class="n">1/1</td><td class="n">1/1</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>Bộ đa ngôn ngữ: 18 PR (JavaScript 5, TypeScript 4, Go 4, Java 3, React 2)</h3>
+  <div class="scroll flush">
+    <table class="wide">
+      <thead>
+        <tr><th>Cấu hình</th><th class="n">Đúng</th><th class="n">Báo nhầm</th><th class="n">Bỏ sót</th><th class="n">Precision</th><th class="n">Recall</th><th class="n">F1</th><th class="n">Giây/PR</th><th class="n">Token/PR</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><code>static</code></td><td class="n">6</td><td class="n">1</td><td class="n">12</td><td class="n">85,7 %</td><td class="n">33,3 %</td><td class="n">48,0 %</td><td class="n">89,9</td><td class="n">0</td></tr>
+        <tr class="best"><td><code>llm</code></td><td class="n">18</td><td class="n">13</td><td class="n">0</td><td class="n">58,1 %</td><td class="n">100 %</td><td class="n">73,5 %</td><td class="n">33,6</td><td class="n">8.336</td></tr>
+        <tr><td><code>both</code></td><td class="n">18</td><td class="n">16</td><td class="n">0</td><td class="n">52,9 %</td><td class="n">100 %</td><td class="n">69,2 %</td><td class="n">96,2</td><td class="n">8.570</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="small muted">Ngoài Python và Dockerfile, static chỉ bắt được lỗi bảo mật (6/7) và không bắt được lỗi nào thuộc nhóm bug, test hay hiệu năng (0/11). Chỉ semgrep và gitleaks áp dụng được cho các ngôn ngữ này.</p>
+
+  <h3>Kết quả sau đợt cải tiến 05–07/10/2026 (học từ Open Code Review)</h3>
+  <p>Sau khi khảo sát Open Code Review của Alibaba, đồ án triển khai bảy cải tiến: ghim nhận xét bằng đoạn code thay vì số dòng, thay self-verify bằng bước kiểm tra sự thật có phần mềm đối chiếu, danh sách kiểm tra theo loại file kèm mục "không báo", chia lô thay vì cắt bớt im lặng, loại trừ file bí mật/sinh tự động, dấu vân tay nhận xét giữa các lần đẩy, và giám khảo AI phân loại báo động giả. Chạy lại toàn bộ với cùng mô hình (<code>gemini-3.1-flash-lite</code>). Các bảng phía trên là số <strong>trước</strong> cải tiến (01/10 và 05/10); bảng dưới là số <strong>sau</strong>. "Đúng dòng" là chấm ở độ lệch 0 dòng.</p>
+  <div class="scroll flush">
+    <table class="wide">
+      <thead>
+        <tr><th>Cấu hình</th><th class="n">Đúng</th><th class="n">Báo nhầm</th><th class="n">Bỏ sót</th><th class="n">Precision</th><th class="n">Recall</th><th class="n">F1 trước</th><th class="n">F1 sau</th><th class="n">F1 đúng dòng</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Python · <code>static</code> (rescore lần chạy gốc)</td><td class="n">21</td><td class="n">9</td><td class="n">15</td><td class="n">70,0 %</td><td class="n">58,3 %</td><td class="n">54,1 %</td><td class="n">63,6 %</td><td class="n">54,5 %</td></tr>
+        <tr class="best"><td>Python · <code>llm</code> (kiểm tra sự thật)</td><td class="n">34</td><td class="n">6</td><td class="n">2</td><td class="n">85,0 %</td><td class="n">94,4 %</td><td class="n">70,1 %</td><td class="n">89,5 %</td><td class="n">89,5 %</td></tr>
+        <tr><td>Python · <code>llm_noverify</code></td><td class="n">34</td><td class="n">6</td><td class="n">2</td><td class="n">85,0 %</td><td class="n">94,4 %</td><td class="n">69,4 %</td><td class="n">89,5 %</td><td class="n">89,5 %</td></tr>
+        <tr><td>Python · <code>llm_legacyverify</code> (self-verify cũ)</td><td class="n">33</td><td class="n">11</td><td class="n">3</td><td class="n">75,0 %</td><td class="n">91,7 %</td><td class="n">70,1 %</td><td class="n">82,5 %</td><td class="n">82,5 %</td></tr>
+        <tr><td>Python · <code>both</code> (mặc định sản phẩm)</td><td class="n">34</td><td class="n">8</td><td class="n">2</td><td class="n">81,0 %</td><td class="n">94,4 %</td><td class="n">66,0 %</td><td class="n">87,2 %</td><td class="n">76,9 %</td></tr>
+        <tr><td>Đa ngôn ngữ · <code>llm</code></td><td class="n">18</td><td class="n">6</td><td class="n">0</td><td class="n">75,0 %</td><td class="n">100 %</td><td class="n">73,5 %</td><td class="n">85,7 %</td><td class="n">76,2 %</td></tr>
+        <tr><td>Đa ngôn ngữ · <code>both</code></td><td class="n">18</td><td class="n">8</td><td class="n">0</td><td class="n">69,2 %</td><td class="n">100 %</td><td class="n">72,0 %</td><td class="n">81,8 %</td><td class="n">72,7 %</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="small muted">Số <code>static</code> và <code>both</code> Python là sau khi gộp mọi cảnh báo tĩnh cùng dòng thành một comment (<code>static</code> không chạy lại vì tất định: rescore kết quả gốc bằng hậu xử lý hiện tại; mất 2 lỗi đúng vì nhãn của cụm lấy theo cảnh báo chính) (trước bước gộp này: 35 đúng, 15 báo nhầm, F1 81,4 %). Thời gian và token mỗi PR: <code>llm</code> 18,5 s · 6.355 token (không kiểm chứng 12,2 s · 4.532; self-verify cũ 18,6 s · 8.656), <code>both</code> 118 s · 6.551; đa ngôn ngữ <code>llm</code> 18,3 s · 6.994, <code>both</code> 110 s · 7.052. Giám khảo AI (<code>gemini-3.5-flash-lite</code>, 3 phiếu) phân loại báo nhầm của <code>llm</code>: Python 6/6 là nhận xét đúng nằm ngoài đáp án, đa ngôn ngữ 5/6 đúng và 1 bịa.</p>
+
+  <h3>Thử trên pull request thật (AACR-Bench, 15 PR Python, 68 vấn đề do kỹ sư xác nhận)</h3>
+  <p>Đây là phép thử cho nghi ngờ "điểm cao vì danh sách kiểm tra được viết sau khi nhìn thấy bộ lỗi tiêm". Chấm theo cách của bài báo AACR-Bench: giám khảo AI bỏ 3 phiếu xác nhận nhận xét của hệ thống và nhận xét của kỹ sư nói về cùng một vấn đề. Mô hình <code>gemini-3.5-flash-lite</code>.</p>
+  <div class="scroll flush">
+    <table>
+      <thead><tr><th>Cấu hình</th><th class="n">Nhận xét</th><th class="n">Trúng</th><th class="n">Precision</th><th class="n">Recall</th><th class="n">F1</th></tr></thead>
+      <tbody>
+        <tr><td><code>llm</code></td><td class="n">8</td><td class="n">1</td><td class="n">12,5 %</td><td class="n">1,5 %</td><td class="n">2,6 %</td></tr>
+        <tr><td><code>both</code> như cũ</td><td class="n">286</td><td class="n">2</td><td class="n">0,7 %</td><td class="n">2,9 %</td><td class="n">1,1 %</td></tr>
+        <tr><td><code>both</code>, chỉ giữ cảnh báo tĩnh trong phạm vi thay đổi</td><td class="n">43</td><td class="n">1</td><td class="n">2,3 %</td><td class="n">1,5 %</td><td class="n">1,8 %</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <ul class="finding">
+    <li class="key">
+      <h4>Trên code thật, hệ thống gần như im lặng</h4>
+      <p>15 PR chỉ sinh 8 nhận xét (không vai nào lỗi, bước kiểm tra sự thật không loại gì), recall 1,5–3 % so với ~90 % trên lỗi tiêm. Hệ thống tốt nhất trong bài báo AACR-Bench (agent dùng Claude 4.5 Sonnet) đạt recall 10,1 %. Con số 89,5 % vì thế phải đọc là "trên bộ đề tự tạo", không phải năng lực thực tế; đây là hạn chế được nói thẳng trong báo cáo.</p>
+    </li>
+    <li class="key">
+      <h4>Công cụ tĩnh trên repo thật chủ yếu báo về code không đổi</h4>
+      <p>240/275 cảnh báo tĩnh nằm ngoài phần sửa của PR; GitHub cũng không cho đặt comment lên những dòng đó. Bộ lọc "chỉ trong phạm vi thay đổi" được thêm vào sản phẩm: số cảnh báo 286 → 43, mất 1 lần trúng vốn không đăng được.</p>
+    </li>
+  </ul>
+
+  <h3>Số liệu nói gì</h3>
+  <ul class="finding">
+    <li class="key">
+      <h4>Kết hợp static với LLM chưa tốt hơn dùng riêng LLM</h4>
+      <p>Trên bộ Python, <code>both</code> bắt thêm được đúng một lỗi so với <code>llm</code> (35 so với 34) nhưng số báo nhầm tăng từ 27 lên 61, kéo F1 từ 70,1 % xuống 53,0 %, và chậm hơn khoảng 9 lần. Bộ đa ngôn ngữ cho cùng chiều: F1 73,5 % xuống 69,2 %. Đây là kết quả ngược với giả thuyết ban đầu của đồ án.</p>
+    </li>
+    <li class="key">
+      <h4>Bước gộp trùng gần như không gộp được gì</h4>
+      <p>Số báo nhầm của <code>both</code> (61) còn cao hơn tổng của hai nguồn khi chạy riêng (26 + 27 = 53). Điều kiện gộp hiện tại đòi hai finding phải cùng loại lỗi theo đúng từng chữ, trong khi static và LLM có thể gán loại khác nhau cho cùng một chỗ. Đây là việc kỹ thuật cần sửa trước tiên.</p>
+    </li>
+    <li class="key">
+      <h4>Chưa đo được lợi ích của self-verify</h4>
+      <p>Tắt self-verify, F1 là 69,4 %. Bật, F1 là 70,1 %. Chạy lại cấu hình có bật thêm một lần cho 69,5 %. Khoảng chênh giữa bật và tắt bằng với dao động giữa hai lần chạy giống hệt nhau, trong khi bật self-verify tốn gấp đôi token (7.229 so với 3.324) và gần gấp đôi thời gian. Mỗi cấu hình mới chạy một hoặc hai lần nên chưa thể kết luận self-verify vô ích, nhưng cũng chưa có bằng chứng nó có ích. Lưu ý rằng bước này dùng chính model và chính vai đã sinh ra finding.</p>
+    </li>
+    <li>
+      <h4>LLM bắt được nhiều hơn static ở hầu hết các nhóm lỗi</h4>
+      <p>Hai nguồn ngang nhau ở nhóm bảo mật (12/13). Ở các nhóm còn lại LLM đều hơn, rõ nhất là test (4/4 so với 0/4). Static vẫn có đóng góp riêng: sau khi ruff được sửa, nó bắt được lỗi so sánh <code>None</code> bằng <code>==</code> mà lượt <code>llm</code> gốc bỏ sót.</p>
+    </li>
+    <li>
+      <h4>Static chậm hơn LLM nhiều lần</h4>
+      <p>Khoảng 100 giây mỗi PR so với 13 giây. Trước khi tối ưu (chỉ quét file trong diff, chỉ nạp luật của ngôn ngữ liên quan) con số là khoảng 350 giây.</p>
+    </li>
+    <li>
+      <h4>Một lỗi "bỏ sót" là do cách chấm</h4>
+      <p>Case <code>secret-aws</code> có hai đáp án ở hai dòng liền nhau (access key và secret key). Công cụ báo một finding bao trùm cả cặp, nhưng mỗi đáp án chỉ được khớp một finding nên dòng thứ hai bị tính là sót. Recall thật cao hơn con số trong bảng một chút.</p>
+    </li>
+  </ul>
+
+  <h3>Giới hạn của thực nghiệm</h3>
+  <ul>
+    <li>Lỗi được cài nhân tạo vào diff nhỏ, dễ nhận ra hơn lỗi trong PR thật. Điều kiện này có lợi cho LLM.</li>
+    <li>53 case đủ để thấy xu hướng, chưa đủ để kết luận có ý nghĩa thống kê. Mỗi cấu hình mới chạy một đến hai lần.</li>
+    <li>Tất cả lượt chạy dùng một model duy nhất (<code>gemini-3.1-flash-lite</code> qua API kiểu OpenAI). Đổi model có thể đổi kết quả.</li>
+    <li>Chưa rà tay các finding bị tính là báo nhầm để tách phần bịa thật khỏi phần nhận xét đúng nhưng nằm ngoài đáp án.</li>
+  </ul>
+</section>
+
+<section id="giai-doan">
+  <h2>5. Giai đoạn hiện tại</h2>
+  <p>Dự án đã qua giai đoạn xây dựng và thực nghiệm chính. Còn lại là sửa một điểm yếu kỹ thuật do thực nghiệm chỉ ra, chạy thử với GitHub thật, và viết luận văn với số liệu mới nhất.</p>
+
+  <ul class="status">
+    <li><span class="chip ok">Đã xong</span><span class="what">Pipeline review và chế độ offline</span><span class="note">Đã chạy đầu-cuối qua <code>app/cli.py</code> hàng trăm lượt trong thực nghiệm.</span></li>
+    <li><span class="chip ok">Đã xong</span><span class="what">Sandbox với năm công cụ static</span><span class="note">Có integration test chạy container thật, bắt buộc mỗi công cụ phải báo ít nhất một phát hiện trên file có lỗi cài sẵn.</span></li>
+    <li><span class="chip ok">Đã xong</span><span class="what">LLM ba vai và self-verify</span><span class="note">Chạy với Google Gemini qua backend kiểu OpenAI.</span></li>
+    <li><span class="chip ok">Đã xong</span><span class="what">Thực nghiệm bộ Python và bộ đa ngôn ngữ</span><span class="note">35 và 18 case, mỗi bộ ba cấu hình. Lượt <code>static</code> và <code>both</code> đã được chạy lại sau khi sửa ruff.</span></li>
+    <li><span class="chip part">Dở dang</span><span class="what">Thực nghiệm tắt self-verify và lần chạy lặp</span><span class="note">Đã chạy xong ngày 26/09 nhưng chưa commit (<code>eval/run_eval.py</code> đang sửa dở, <code>eval/out-noise/</code> chưa được theo dõi). <code>eval/score.py</code> chưa chấm cấu hình <code>llm_noverify</code>.</span></li>
+    <li><span class="chip part">Dở dang</span><span class="what">Báo cáo tiến độ và luận văn</span><span class="note"><code>BAO_CAO_TIEN_DO.md</code> và <code>eval/out/results.md</code> còn số liệu ngày 21/09: chưa có kết quả sau khi sửa ruff, chưa có bộ đa ngôn ngữ, chưa có phần self-verify. Nhận định "static là tập con của LLM" trong báo cáo không còn đúng.</span></li>
+    <li><span class="chip part">Dở dang</span><span class="what">Kiểm thử tự động</span><span class="note">Chạy <code>pytest</code> hôm nay: 4 unit test qua, 8 integration test bị bỏ qua vì Docker không chạy lúc kiểm tra. Chưa có test nào cho nhánh webhook và GitHub.</span></li>
+    <li><span class="chip todo">Chưa làm</span><span class="what">Chạy với GitHub App thật</span><span class="note">File <code>.env</code> vẫn dùng mã App giả. <code>main.py</code>, <code>worker.py</code>, <code>github_app.py</code> và <code>memory.py</code> chưa từng chạy đầu-cuối với GitHub, Redis và Postgres thật. Cần đăng ký GitHub App và một đường hầm công khai.</span></li>
+    <li><span class="chip todo">Chưa làm</span><span class="what">Sửa bước gộp static với LLM</span><span class="note">Nguyên nhân chính khiến cấu hình mặc định của sản phẩm kém hơn cấu hình chỉ LLM.</span></li>
+    <li><span class="chip todo">Chưa làm</span><span class="what">Backend Hermes Agent</span><span class="note">Có mã (<code>HermesCLIBackend</code>) nhưng mọi lượt chạy đã ghi lại đều dùng backend kiểu OpenAI.</span></li>
+    <li><span class="chip todo">Chưa làm</span><span class="what">Bot học từ phản hồi</span><span class="note">Ghi nhớ theo repo đã được đọc vào prompt, nhưng chưa có chỗ nào trong mã ghi vào nó. Comment của bot mời bấm 👍/👎 nhưng chưa có gì xử lý phản hồi đó.</span></li>
+  </ul>
+
+  <h3>Mốc thời gian</h3>
+  <dl class="timeline">
+    <dt>16–17/09</dt><dd>Dựng mã nguồn và môi trường, build image sandbox. Phát hiện semgrep chưa từng chạy được vì cần tải luật qua mạng; sửa bằng cách nạp sẵn luật vào image. Nối bandit vào script.</dd>
+    <dt>18/09</dt><dd>Phát hiện self-verify chưa từng chạy được do lỗi ghép chuỗi prompt; sửa và thêm test hồi quy. Tối ưu quét static từ khoảng 350 giây xuống 70–120 giây. Dựng bộ thực nghiệm.</dd>
+    <dt>21/09</dt><dd>Chạy xong 105 lượt trên bộ Python. Viết báo cáo tiến độ.</dd>
+    <dt>22–23/09</dt><dd>Thêm bộ đa ngôn ngữ. Commit đầu tiên.</dd>
+    <dt>25–26/09</dt><dd>Phát hiện ruff chưa từng trả về kết quả nào vì ghi cache vào thư mục chỉ đọc. Sửa, thêm cảnh báo khi công cụ thất bại và integration test, chạy lại <code>static</code> và <code>both</code>. Commit thứ hai.</dd>
+    <dt>26/09 (tối)</dt><dd>Chạy thực nghiệm tắt self-verify, lần chạy lặp của <code>llm</code>, và chạy lại bộ đa ngôn ngữ. Chưa commit.</dd>
+  </dl>
+
+  <h3>Bài học lặp lại bốn lần: công cụ hỏng mà không ai biết</h3>
+  <p>Semgrep, bandit, self-verify và ruff đều từng ở trạng thái không hoạt động mà không báo lỗi, vì lỗi bị nuốt và một lần chạy hỏng trông giống hệt một lần chạy không tìm thấy gì. Cả bốn lần đều lọt qua unit test. Dự án đã thêm ba hàng rào: script trong sandbox ghi tên công cụ thất bại ra file riêng, đầu mỗi báo cáo in trạng thái từng công cụ, và integration test chạy container thật. Hàng rào thứ nhất hiện áp dụng cho semgrep, gitleaks và ruff. Bandit và hadolint vẫn nuốt lỗi trong script và chỉ được integration test che chắn.</p>
+
+  <h3>Hai chỗ tài liệu và mã chưa khớp</h3>
+  <ul>
+    <li>Báo cáo và chú thích trong mã ghi webhook trả <code>202</code>. Mã hiện trả <code>200</code>, là mặc định của FastAPI. GitHub chấp nhận cả hai, nhưng nên sửa một trong hai cho thống nhất trước khi bảo vệ.</li>
+    <li>Container sandbox vẫn chạy bằng user root và hệ thống file riêng của nó ghi được. Những gì được bảo vệ là mã nguồn (chỉ đọc), mạng (không có) và capability (bỏ hết). Trong mã có ghi chú về việc hạ xuống user thường.</li>
+  </ul>
+
+  <h3>Việc nên làm tiếp, theo thứ tự</h3>
+  <ol>
+    <li><strong>Sửa bước gộp static với LLM</strong>, rồi chạy lại cấu hình <code>both</code>. Đây là thay đổi duy nhất có thể đảo lại kết luận về giả thuyết chính.</li>
+    <li><strong>Đưa số liệu mới vào tài liệu</strong>: cho <code>score.py</code> chấm cả <code>llm_noverify</code>, sinh lại <code>results.md</code>, cập nhật báo cáo, commit các thay đổi đang dở.</li>
+    <li><strong>Quyết định về self-verify</strong>: chạy lặp mỗi cấu hình vài lần để có khoảng dao động, hoặc thử dùng một model khác cho bước kiểm chứng. Kết quả nào cũng là nội dung đáng viết vào luận văn.</li>
+    <li><strong>Chạy thử với GitHub App thật</strong> trên một repo thử nghiệm, để có ảnh chụp và bằng chứng cho phần demo.</li>
+    <li><strong>Rà tay các finding bị tính là báo nhầm</strong> để báo cáo được precision gần với thực tế hơn.</li>
+  </ol>
+</section>
+
+<section id="thuat-ngu">
+  <h2>6. Thuật ngữ</h2>
+  <dl class="glossary">
+    <dt>Pull request (PR)</dt><dd>Đề nghị gộp một nhóm thay đổi code vào nhánh chính, là nơi diễn ra việc review.</dd>
+    <dt>Diff</dt><dd>Phần khác nhau giữa bản cũ và bản mới của các file trong PR.</dd>
+    <dt>Webhook</dt><dd>Cách GitHub chủ động gọi vào hệ thống khi có sự kiện.</dd>
+    <dt>HMAC</dt><dd>Mã xác thực tính từ nội dung và một khoá bí mật, chứng minh webhook thật sự đến từ GitHub.</dd>
+    <dt>Check run</dt><dd>Dòng trạng thái hiện trên PR (đang chạy, đạt, không đạt). Có thể dùng để chặn merge.</dd>
+    <dt>Static analysis</dt><dd>Phân tích mã nguồn mà không chạy chương trình.</dd>
+    <dt>Sandbox</dt><dd>Môi trường cô lập để xử lý thứ không đáng tin.</dd>
+    <dt>Finding</dt><dd>Một phát hiện của bot: file, dòng, mức độ, loại lỗi, giải thích, gợi ý sửa, độ tin cậy.</dd>
+    <dt>Hallucination</dt><dd>LLM tạo ra thông tin nghe hợp lý nhưng sai. Ở đây là bịa ra lỗi không tồn tại hoặc báo sai dòng.</dd>
+    <dt>Self-verify</dt><dd>Lượt gọi LLM thứ hai để kiểm chứng lại kết quả của lượt đầu.</dd>
+    <dt>Ground truth</dt><dd>Đáp án đã biết trước, dùng để chấm điểm.</dd>
+    <dt>Precision</dt><dd>Trong những gì bot báo, bao nhiêu phần là đúng.</dd>
+    <dt>Recall</dt><dd>Trong những lỗi có thật, bot bắt được bao nhiêu phần.</dd>
+    <dt>F1</dt><dd>Trung bình điều hoà của precision và recall. Chỉ cao khi cả hai cùng cao.</dd>
+  </dl>
+</section>
+
+<footer>
+  Tổng hợp từ mã nguồn, lịch sử git và các file kết quả thực nghiệm của repo HermesQA tại thời điểm 01/10/2026.
+</footer>
+
+</div>
+</body>
+</html>
