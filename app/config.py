@@ -65,6 +65,15 @@ class Settings(BaseSettings):
     min_confidence: float = 0.6
     min_severity_to_comment: str = "medium"
     block_on_critical: bool = False
+    # Học từ 👎 (app.review.calibrate): một loại nhận xét (luật + thư mục) bị 👎 ít nhất feedback_min_rejects lần
+    # và chiếm >= feedback_reject_ratio tổng phản hồi -> confidence nhân với feedback_confidence_factor
+    # trước khi qua ngưỡng min_confidence. Nhóm bảo mật/bug nặng không bao giờ bị hạ.
+    feedback_min_rejects: int = 2
+    feedback_reject_ratio: float = 0.67
+    feedback_confidence_factor: float = 0.5
+    # Agent tự rút ghi chú về repo sau mỗi lần review (app.review.reflect): thêm 1 lần gọi LLM/PR.
+    agent_memory_enabled: bool = True
+    agent_memory_max_notes: int = 30      # trần ghi chú nguồn agent mỗi repo; ghi chú từ người không bị cắt
 
     @model_validator(mode="after")
     def _apply_llm_profile(self):

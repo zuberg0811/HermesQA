@@ -5,10 +5,11 @@ import shutil
 import subprocess
 import yaml
 
+from app import feedback
 from app.config import settings
 from app.github_app import GitHubClient
-from app.memory import init_db, save_run, get_repo_memory, get_posted, save_posted
-from app.review import postprocess, report, static_tools
+from app.memory import init_db, save_run, get_repo_memory, get_posted, save_posted, feedback_profile
+from app.review import calibrate, postprocess, reflect, report, static_tools
 from app.review.agent import get_backend
 from app.review.diff_utils import parse_diff
 from app.review.pipeline import attach_code_to_static, run_llm_review, scope_static_to_diff
@@ -80,15 +81,36 @@ def review_pull_request(job: dict):
                 log.error("cong cu static THAT BAI: %s (ket qua thieu phan cua no)", name)
         attach_code_to_static(static, files)
 
+        # 3b. Học từ 👍/👎 người đã bấm lên comment của lần chạy trước (GitHub không có webhook cho
+        #     reaction). Làm TRƯỚC khi gọi LLM để ghi chú mới áp dụng ngay cho lần review này.
+        try:
+            learned = feedback.sync_reactions(gh, owner, repo, pr)
+            if learned:
+                ctx.step("feedback", f"học {learned} phản hồi 👍/👎 từ lần trước")
+        except Exception as e:  # học hỏi không được làm hỏng review
+            log.warning("sync_reactions failed: %s", e)
+
         # 4. LLM theo từng vai: chọn file, che bí mật, chia lô, ghim, kiểm chứng (app.review.pipeline)
         roles = select_roles(files, cfg.roles)
         ctx.step("static:done", f"{len(static)} finding")
-        res = run_llm_review(get_backend(), roles, files, repo_dir, pr_meta, static, cfg.conventions, get_repo_memory(full), on_step=ctx.step)
+        backend = get_backend()
+        res = run_llm_review(backend, roles, files, repo_dir, pr_meta, static, cfg.conventions, get_repo_memory(full), on_step=ctx.step)
         summaries = {r: (s or "Không có nhận xét.") for r, s in res.summaries.items()}
 
         # 5. Post-process
         ctx.step("postprocess", "gộp trùng, lọc theo ngưỡng")
         all_f = postprocess.dedupe(static + res.findings)
+        # 5b. Lớp 5 tự học: loại nhận xét repo đã 👎 nhiều lần bị hạ confidence (app.review.calibrate),
+        #     nên rơi khỏi ngưỡng min_confidence ở bước ngay dưới mà không cần model "nhớ".
+        adjusted: list[dict] = []
+        try:
+            adjusted = calibrate.calibrate(all_f, calibrate.Profile(feedback_profile(full)),
+                                           settings.feedback_min_rejects, settings.feedback_reject_ratio,
+                                           settings.feedback_confidence_factor)
+            if adjusted:
+                ctx.step("calibrate", f"hạ confidence {len(adjusted)} nhận xét theo 👎 trước đây")
+        except Exception as e:  # học hỏi không được làm hỏng review
+            log.warning("calibrate failed: %s", e)
         inline, overflow = postprocess.apply_policy(all_f, files, settings.min_confidence, settings.min_severity_to_comment, max_comments)
         conclusion = postprocess.conclusion(inline + overflow, block)
         # Chỉ đăng comment CHƯA từng đăng lên PR này. Kết luận (conclusion) vẫn tính trên toàn bộ:
@@ -110,14 +132,28 @@ def review_pull_request(job: dict):
                                        skipped=res.skipped, already_posted=len(repeated))
         event = "REQUEST_CHANGES" if conclusion == "failure" else "COMMENT"
         ctx.step("post", f"đăng {len(to_post)} comment lên GitHub")
-        gh.post_review(owner, repo, pr, sha, body, [postprocess.to_github_comment(f) for f in to_post], event=event)
+        review = gh.post_review(owner, repo, pr, sha, body, [postprocess.to_github_comment(f) for f in to_post], event=event)
         gh.complete_check_run(owner, repo, check_id, conclusion, f"HermesQA: {len(inline)+len(overflow)} phát hiện", body, md)
-        save_posted(full, pr, sha, [f.fingerprint for f in to_post])
+        save_posted(full, pr, sha, to_post)   # lưu cả tóm tắt finding để phản hồi sau này biết nó nói về gì
+        try:   # gắn id comment GitHub vào từng finding (reply của người sẽ trỏ về id này)
+            feedback.link_comment_ids(gh, owner, repo, pr, (review or {}).get("id"))
+        except Exception as e:
+            log.warning("link_comment_ids failed: %s", e)
 
         save_run(full, pr, sha, roles, inline + overflow, conclusion)
+
+        # 8. Lớp 2 tự học: agent nhìn lại lần chạy (giữ gì, fact-check loại gì) và tự ghi 0-3 ghi chú
+        #    về repo cho lần sau (app.review.reflect). Sau khi đã đăng, nên chậm cũng không ảnh hưởng người dùng.
+        learned: list[dict] = []
+        if settings.agent_memory_enabled:
+            ctx.step("reflect", "agent tự rút ghi chú về repo")
+            learned = reflect.learn(backend, full, pr_meta, inline + overflow, res.removed, cfg.conventions,
+                                    max_notes=settings.agent_memory_max_notes)
+
         ctx.finish(source="worker", pr_meta=pr_meta, roles=roles, res=res, static=static, final=inline + overflow,
                    tools=tools, model=settings.llm_model, verify_mode=settings.verify_mode, skip_static=False,
-                   conclusion=conclusion, extra={"posted": len(to_post), "repeated": len(repeated)})
+                   conclusion=conclusion, extra={"posted": len(to_post), "repeated": len(repeated),
+                                                 "calibrated": len(adjusted), "learned_notes": len(learned)})
         log.info("done PR #%s conclusion=%s posted=%d repeated=%d overflow=%d skipped=%d report=%s",
                  pr, conclusion, len(to_post), len(repeated), len(overflow), len(res.skipped), report_path)
 
@@ -128,3 +164,12 @@ def review_pull_request(job: dict):
         raise
     finally:
         shutil.rmtree(work, ignore_errors=True)
+
+
+def ingest_feedback(job: dict):
+    """Job nhẹ: người trả lời vào comment của bot -> phân loại -> ghi repo memory (app.feedback)."""
+    init_db()
+    gh = GitHubClient(job["installation_id"])
+    kind = feedback.ingest_reply(gh, job["owner"], job["repo"], job["pr_number"], job["comment"])
+    log.info("feedback PR #%s %s/%s -> %s", job["pr_number"], job["owner"], job["repo"], kind or "ignored")
+    return kind

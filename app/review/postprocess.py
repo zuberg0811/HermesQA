@@ -125,7 +125,11 @@ def to_github_comment(f: Finding) -> dict:
     if f.suggested_fix:
         fix = f.suggested_fix.strip()
         body += f"\n\n**Gợi ý sửa:**\n```\n{fix}\n```" if "\n" in fix or len(fix) > 60 else f"\n\n**Gợi ý sửa:** {fix}"
-    body += f"\n\n<sub>{f.role} · confidence {f.confidence:.0%}</sub>"
+    body += f"\n\n<sub>{f.role} · confidence {f.confidence:.0%} · 👍/👎 hoặc trả lời để HermesQA học</sub>"
+    # Dấu ẩn (GitHub không hiển thị HTML comment) nối comment này với finding, để phản hồi
+    # của người (reply / reaction) tìm về đúng finding — xem app/feedback.py.
+    f.fingerprint = f.fingerprint or fingerprint(f)
+    body += f"\n<!-- hermesqa:fp={f.fingerprint} -->"
     return {"path": f.file, "line": f.line, "side": "RIGHT", "body": body}
 
 

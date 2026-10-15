@@ -67,6 +67,18 @@ docker compose up --build
 ## 4. Cấu hình theo repo
 Copy `.hermesqa.yml.example` → `.hermesqa.yml` ở gốc repo được review: chọn vai, ignore glob, convention, max comments, có block merge khi critical hay không.
 
+## 4b. Học từ phản hồi trên PR (repo memory)
+Mỗi comment inline của bot mang một dấu ẩn `<!-- hermesqa:fp=… -->` nối nó với finding. Người review có hai cách dạy bot:
+- **Trả lời vào comment** ("không phải lỗi", "bỏ qua", "cố ý", hoặc "đúng rồi", "đã sửa"…): GitHub gửi `pull_request_review_comment`, webhook đẩy job `app.worker.ingest_feedback`, `app/feedback.py` phân loại reject/accept và ghi một ghi chú vào bảng `repo_memory`.
+- **Bấm 👍/👎**: GitHub không có webhook cho reaction, nên ở lần push tiếp theo worker đọc lại reactions của các comment cũ (`feedback.sync_reactions`) trước khi gọi LLM.
+
+Ghi chú (ví dụ ``KHÔNG báo lại: `scripts/run.py` — [style] Dùng print() thay logging. Người review nói đây không phải vấn đề: "scripts dùng print là chuẩn"``) được nạp vào prompt của mọi vai ở các lần review sau của cùng repo (`memory.get_repo_memory`). Ghi chú về lỗi bảo mật chỉ mang tính tham khảo, bot vẫn báo nếu gặp mẫu đó ở chỗ khác. Mỗi phản hồi thô được lưu ở bảng `feedback` và chỉ ghi nhận một lần. GitHub App cần subscribe thêm event **Pull request review comment**.
+
+**Hiệu chỉnh confidence theo 👎** (`app/review/calibrate.py`, không cần LLM): mỗi finding được gán khoá `<nguồn>:<luật> | <thư mục cấp 1>` (static tool dùng mã luật, LLM dùng category). Nếu khoá đó đã bị 👎 ít nhất `FEEDBACK_MIN_REJECTS` lần (mặc định 2) và chiếm từ `FEEDBACK_REJECT_RATIO` (0.67) tổng phản hồi, confidence nhân `FEEDBACK_CONFIDENCE_FACTOR` (0.5) trước khi qua ngưỡng `MIN_CONFIDENCE`, nên nhận xét loại đó rơi khỏi comment inline mà không phụ thuộc model có "nghe" ghi chú hay không; lý do được ghi vào phần giải thích. Nhóm bảo mật / bug mức high trở lên không bao giờ bị hạ.
+
+**Agent tự ghi chú sau mỗi lần review** (`app/review/reflect.py`, giống "agent-curated memory" của Hermes Agent): sau khi đã đăng review, thêm một lần gọi LLM nhìn lại lần chạy — nhận xét nào được giữ, nhận xét nào bị fact-check loại và vì sao, ghi chú nào đã có — rồi rút ra 0–3 ghi chú về repo (convention / false_positive / pattern), ghi vào `repo_memory` nguồn `agent`. Trong prompt lần sau các ghi chú này mang tiền tố "(tự rút ra)" để phân biệt với ghi chú do người dạy. Hàng rào: lọc trùng, không nhận ghi chú "không báo" về bảo mật, trần `AGENT_MEMORY_MAX_NOTES` (30) ghi chú agent mỗi repo (ghi chú từ người không bị cắt), lỗi ở bước này không làm hỏng review. Tắt bằng `AGENT_MEMORY_ENABLED=false`.
+
+
 ## 5. Test
 ```bash
 pip install pytest && pytest -q
@@ -90,4 +102,4 @@ python eval/score.py                        # -> eval/out/results.md
 - Webhook xác thực HMAC SHA-256.
 
 ## Roadmap
-GitLab/Bitbucket · suggestion blocks · dashboard web · feedback 👍/👎 → repo memory tự động · multi-tenant + billing.
+GitLab/Bitbucket · suggestion blocks · agent tự ghi chú sau mỗi lần chạy · lọc memory theo file/vai · hiệu chỉnh confidence theo tỉ lệ 👎 · multi-tenant + billing.

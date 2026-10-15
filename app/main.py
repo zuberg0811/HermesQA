@@ -31,6 +31,28 @@ def verify_signature(body: bytes, signature: str | None) -> None:
         raise HTTPException(401, "Bad signature")
 
 
+def _enqueue_feedback(payload: dict, delivery_id: str):
+    """Người trả lời vào một comment inline của bot -> job học phản hồi (app.feedback). Nhẹ, không clone repo.
+    Reaction 👍/👎 không có webhook; worker tự đọc lại ở lần push sau."""
+    comment = payload.get("comment") or {}
+    if payload.get("action") != "created" or not comment.get("in_reply_to_id"):
+        return {"msg": "ignored", "event": "pull_request_review_comment", "action": payload.get("action")}
+    if (comment.get("user") or {}).get("type") == "Bot":
+        return {"msg": "ignored bot comment"}
+    job_payload = {
+        "delivery_id": delivery_id,
+        "installation_id": payload["installation"]["id"],
+        "owner": payload["repository"]["owner"]["login"],
+        "repo": payload["repository"]["name"],
+        "pr_number": payload["pull_request"]["number"],
+        "comment": {"id": comment.get("id"), "in_reply_to_id": comment.get("in_reply_to_id"),
+                    "body": comment.get("body") or "", "user": comment.get("user") or {}},
+    }
+    job = queue.enqueue("app.worker.ingest_feedback", job_payload, job_timeout="2m")
+    log.info("queued feedback PR #%s %s/%s job=%s", job_payload["pr_number"], job_payload["owner"], job_payload["repo"], job.id)
+    return {"msg": "queued feedback", "job_id": job.id}
+
+
 @app.get("/health")
 def health():
     return {"status": "ok", "queued": queue.count}
@@ -49,6 +71,9 @@ async def github_webhook(
 
     if x_github_event == "ping":
         return {"msg": "pong"}
+
+    if x_github_event == "pull_request_review_comment":
+        return _enqueue_feedback(payload, x_github_delivery)
 
     if x_github_event != "pull_request" or payload.get("action") not in REVIEW_ACTIONS:
         return {"msg": "ignored", "event": x_github_event, "action": payload.get("action")}

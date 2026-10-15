@@ -58,6 +58,24 @@ class GitHubClient:
                 return files
             page += 1
 
+    def list_review_comments(self, owner: str, repo: str, pr: int) -> list[dict]:
+        """Mọi comment inline trên PR (có `body`, `path`, `pull_request_review_id`, `reactions`, `in_reply_to_id`)."""
+        out, page = [], 1
+        while True:
+            r = httpx.get(f"{API}/repos/{owner}/{repo}/pulls/{pr}/comments", headers=self._headers(),
+                          params={"per_page": 100, "page": page}, timeout=60)
+            r.raise_for_status()
+            batch = r.json()
+            out += batch
+            if len(batch) < 100:
+                return out
+            page += 1
+
+    def get_review_comment(self, owner: str, repo: str, comment_id: int) -> dict:
+        r = httpx.get(f"{API}/repos/{owner}/{repo}/pulls/comments/{comment_id}", headers=self._headers(), timeout=30)
+        r.raise_for_status()
+        return r.json()
+
     # ---------- write ----------
     def create_check_run(self, owner: str, repo: str, head_sha: str, name="HermesQA Review") -> int:
         r = httpx.post(f"{API}/repos/{owner}/{repo}/check-runs", headers=self._headers(),
