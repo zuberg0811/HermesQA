@@ -129,6 +129,51 @@ def get_repo_memory(repo: str, limit: int = 20) -> str:
     return "\n".join(lines)
 
 
+def _path_score(note_file: str, paths: list[str]) -> int:
+    """3 = trùng file, 2 = cùng thư mục / tiền tố, 1 = ghi chú chung (không gắn file), 0 = file khác."""
+    nf = (note_file or "").replace("\\", "/").strip().rstrip("/")
+    if not nf:
+        return 1
+    for p in paths:
+        p = p.replace("\\", "/")
+        if p == nf:
+            return 3
+        if p.startswith(nf + "/") or nf.startswith(p.rsplit("/", 1)[0] + "/") or p.split("/")[0] == nf.split("/")[0]:
+            return 2
+    return 0
+
+
+# Vai nào quan tâm category nào (chỉ để xếp hạng, không lọc bỏ)
+_ROLE_CATEGORIES = {"QA": {"test", "bug"}, "DevOps": {"devops", "security"}, "SE": {"bug", "security", "performance", "style"}}
+
+
+def select_memory(repo: str, paths: list[str], role: str = "", limit: int = 20, pool: int = 200) -> list[dict]:
+    """Lớp 3 của tự học: chọn ghi chú LIÊN QUAN tới lô file đang review thay vì 20 ghi chú mới nhất.
+
+    Thứ tự: ghi chú gắn đúng file > cùng thư mục > ghi chú chung của repo > ghi chú về file khác;
+    cùng hạng thì ưu tiên ghi chú do người dạy, rồi category hợp vai, rồi mới nhất. Ghi chú về file
+    không liên quan chỉ được lấy khi còn chỗ."""
+    rows = list_memory(repo, limit=pool)
+    if not rows:
+        return []
+    want = _ROLE_CATEGORIES.get(role, set())
+    scored = []
+    for i, r in enumerate(rows):            # i nhỏ = mới hơn
+        ps = _path_score(r["file"], paths)
+        scored.append((ps, 1 if r["source"] == "feedback" else 0, 1 if r["category"] in want else 0, -i, r))
+    scored.sort(key=lambda t: t[:4], reverse=True)
+    return [t[4] for t in scored[:limit]]
+
+
+def memory_text(rows: list[dict]) -> str:
+    return "\n".join(f"- {'(tự rút ra) ' if r['source'] == 'agent' else ''}{r['note']}" for r in rows)
+
+
+def memory_for_batch(repo: str, limit: int = 20):
+    """Callable truyền vào run_llm_review: mỗi lô file nhận khối memory riêng (xem pipeline)."""
+    return lambda paths, role: memory_text(select_memory(repo, paths, role, limit))
+
+
 def prune_agent_notes(repo: str, keep: int = 30) -> int:
     """Giữ `keep` ghi chú nguồn agent mới nhất của repo, xoá phần cũ hơn. Ghi chú từ người không bị đụng."""
     with Session() as s:

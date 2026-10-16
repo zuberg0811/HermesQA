@@ -100,7 +100,7 @@ def attach_code_to_static(static: list[Finding], files: list[ChangedFile]) -> No
 
 
 def run_llm_review(backend: AgentBackend, roles: list[str], files: list[ChangedFile], repo_dir: str,
-                   pr_meta: dict, static: list[Finding], conventions: str = "", repo_memory: str = "",
+                   pr_meta: dict, static: list[Finding], conventions: str = "", repo_memory="",
                    verify_mode: str | None = None, on_step=None) -> LLMReview:
     """on_step(name, detail): callback tiến độ cho run log/web realtime; None = không báo."""
     mode = verify_mode or settings.verify_mode
@@ -136,8 +136,11 @@ def run_llm_review(backend: AgentBackend, roles: list[str], files: list[ChangedF
         try:
             for batch in batches:
                 paths = [it["path"] for it in batch]
+                # repo_memory: chuỗi (như cũ) hoặc callable(paths, role) -> chuỗi: memory chọn theo lô
+                # (memory.memory_for_batch) để ghi chú về file khác không chiếm chỗ trong prompt.
+                mem = repo_memory(paths, role) if callable(repo_memory) else repo_memory
                 prompt = build_user_prompt(pr_meta, batch, static_summary_for(static, set(paths)),
-                                           conventions, repo_memory, resolve_rules(paths))
+                                           conventions, mem, resolve_rules(paths))
                 mark = getattr(backend, "last_usage", (0, 0))
                 out = backend.run(role, prompt)
                 res.stats["llm_calls"] += 1

@@ -3,7 +3,7 @@
 Giống cơ chế "agent-curated memory" của Hermes Agent: không chờ người phản hồi (lớp 1), agent tự
 nhìn lại lần chạy — nhận xét nào được giữ, nhận xét nào bị fact-check loại và vì sao — rồi viết
 0–3 ghi chú ngắn cho lần sau. Ghi chú đi vào cùng bảng repo_memory, nguồn "agent", và được nạp
-vào prompt của mọi vai ở lần review sau (memory.get_repo_memory).
+vào prompt của mọi vai ở lần review sau, chọn theo lô file (memory.memory_for_batch).
 
 Hàng rào, vì agent tự viết cho chính nó đọc:
 - chỉ ghi chú về repo (convention, cấu trúc, thứ không nên báo), không về PR vừa review;

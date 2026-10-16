@@ -78,6 +78,8 @@ Ghi chú (ví dụ ``KHÔNG báo lại: `scripts/run.py` — [style] Dùng print
 
 **Agent tự ghi chú sau mỗi lần review** (`app/review/reflect.py`, giống "agent-curated memory" của Hermes Agent): sau khi đã đăng review, thêm một lần gọi LLM nhìn lại lần chạy — nhận xét nào được giữ, nhận xét nào bị fact-check loại và vì sao, ghi chú nào đã có — rồi rút ra 0–3 ghi chú về repo (convention / false_positive / pattern), ghi vào `repo_memory` nguồn `agent`. Trong prompt lần sau các ghi chú này mang tiền tố "(tự rút ra)" để phân biệt với ghi chú do người dạy. Hàng rào: lọc trùng, không nhận ghi chú "không báo" về bảo mật, trần `AGENT_MEMORY_MAX_NOTES` (30) ghi chú agent mỗi repo (ghi chú từ người không bị cắt), lỗi ở bước này không làm hỏng review. Tắt bằng `AGENT_MEMORY_ENABLED=false`.
 
+**Memory chọn theo lô file** (`memory.select_memory`): mỗi lần gọi LLM chỉ nhận ghi chú liên quan tới các file trong lô — gắn đúng file trước, cùng thư mục, rồi ghi chú chung của repo; cùng hạng thì ghi chú do người dạy trước, category hợp vai trước, rồi mới nhất. Ghi chú về file khác chỉ được lấy khi còn chỗ (tối đa 20 dòng/lô).
+
 
 ## 5. Test
 ```bash

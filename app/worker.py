@@ -8,7 +8,7 @@ import yaml
 from app import feedback
 from app.config import settings
 from app.github_app import GitHubClient
-from app.memory import init_db, save_run, get_repo_memory, get_posted, save_posted, feedback_profile
+from app.memory import init_db, save_run, memory_for_batch, get_posted, save_posted, feedback_profile
 from app.review import calibrate, postprocess, reflect, report, static_tools
 from app.review.agent import get_backend
 from app.review.diff_utils import parse_diff
@@ -94,7 +94,8 @@ def review_pull_request(job: dict):
         roles = select_roles(files, cfg.roles)
         ctx.step("static:done", f"{len(static)} finding")
         backend = get_backend()
-        res = run_llm_review(backend, roles, files, repo_dir, pr_meta, static, cfg.conventions, get_repo_memory(full), on_step=ctx.step)
+        # memory_for_batch: mỗi lô file nhận ghi chú liên quan tới chính nó (lớp 3 tự học), không phải 20 ghi chú mới nhất
+        res = run_llm_review(backend, roles, files, repo_dir, pr_meta, static, cfg.conventions, memory_for_batch(full), on_step=ctx.step)
         summaries = {r: (s or "Không có nhận xét.") for r, s in res.summaries.items()}
 
         # 5. Post-process

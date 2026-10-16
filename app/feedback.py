@@ -1,7 +1,7 @@
 """Học từ phản hồi của người trên PR (lớp 1 của "tự học"): phần GHI vào repo memory.
 
-Phần ĐỌC đã có từ trước: worker nạp get_repo_memory(repo) vào prompt của mọi vai
-(agent.build_user_prompt). Module này điền vào bảng đó từ hai kênh:
+Phần ĐỌC: worker nạp ghi chú liên quan tới từng lô file (memory.memory_for_batch, lớp 3) vào prompt
+của mọi vai (agent.build_user_prompt). Module này điền vào bảng đó từ hai kênh:
 
 1. reply   – người trả lời thẳng vào comment của bot ("không phải lỗi", "bỏ qua", "đúng rồi"...).
              GitHub gửi webhook pull_request_review_comment; main.py đẩy vào queue, worker.ingest_feedback gọi vào đây.
