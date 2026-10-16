@@ -8,6 +8,7 @@ Cấu trúc và một phần nội dung phỏng theo rule_docs của alibaba/ope
 (Apache-2.0), viết lại bằng tiếng Việt và rút gọn.
 """
 import fnmatch
+import os
 from pathlib import Path
 
 from app.review.router import is_test
@@ -68,11 +69,30 @@ def rule_files_for(path: str) -> list[str]:
     return docs
 
 
-def _read(doc: str) -> str:
+# Lớp 4 tự học: overlay "Không báo" học được từ phản hồi, nằm riêng để diff/rollback được và không
+# đụng checklist gốc. Biến môi trường trỏ sang thư mục ứng viên khi chạy eval kiểm định (tools/learn_rules.py).
+LEARNED_DIR_ENV = "HERMESQA_LEARNED_RULES_DIR"
+LEARNED_HEADING = "**Không báo (học được từ phản hồi, đã qua kiểm định eval):**"
+
+
+def learned_dir() -> Path:
+    return Path(os.environ.get(LEARNED_DIR_ENV) or (RULES_DIR / "learned"))
+
+
+def read_learned(doc: str) -> str:
     try:
-        return (RULES_DIR / doc).read_text(encoding="utf-8").strip()
+        return (learned_dir() / doc).read_text(encoding="utf-8").strip()
     except FileNotFoundError:
         return ""
+
+
+def _read(doc: str) -> str:
+    try:
+        body = (RULES_DIR / doc).read_text(encoding="utf-8").strip()
+    except FileNotFoundError:
+        return ""
+    overlay = read_learned(doc)
+    return f"{body}\n\n{LEARNED_HEADING}\n{overlay}" if overlay else body
 
 
 def resolve_rules(paths: list[str]) -> str:

@@ -80,6 +80,12 @@ Ghi chú (ví dụ ``KHÔNG báo lại: `scripts/run.py` — [style] Dùng print
 
 **Memory chọn theo lô file** (`memory.select_memory`): mỗi lần gọi LLM chỉ nhận ghi chú liên quan tới các file trong lô — gắn đúng file trước, cùng thư mục, rồi ghi chú chung của repo; cùng hạng thì ghi chú do người dạy trước, category hợp vai trước, rồi mới nhất. Ghi chú về file khác chỉ được lấy khi còn chỗ (tối đa 20 dòng/lô).
 
+**Tự bổ sung checklist, có cổng kiểm định** (`app/review/learn_rules.py`, `tools/learn_rules.py`): checklist trong `app/skills/rules/` áp dụng cho mọi repo nên không để LLM sửa thẳng. `propose` gom bằng chứng từ DB (👎 của người, ghi chú false_positive/convention của agent, nhiều repo), nhờ LLM đề xuất tối đa 5 dòng "Không báo" mới (lọc bỏ mọi dòng chạm bảo mật, trùng, quá dài) và ghi ứng viên vào `data/rules_candidates/`. `gate` chạy eval với biến `HERMESQA_LEARNED_RULES_DIR` trỏ sang ứng viên, chấm bằng `eval/score.py`, chỉ chép vào `app/skills/rules/learned/<doc>.md` (được `resolve_rules` nối sau checklist gốc) khi precision không giảm và recall không giảm quá `--max-recall-drop`; mỗi lần promote ghi `learned/HISTORY.md` để rollback bằng git. Bộ eval dùng cho cổng nên khác nguồn bằng chứng để tránh "học thuộc đề".
+```bash
+python tools/learn_rules.py propose --docs python.md,tests.md --profile claudecode
+python tools/learn_rules.py gate --doc python.md --baseline eval/out-v3-rescored --out eval/out-learned --config llm --profile claudecode
+```
+
 
 ## 5. Test
 ```bash

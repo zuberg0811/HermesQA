@@ -287,6 +287,29 @@ def feedback_profile(repo: str) -> list[dict]:
     return [{"kind": kind, **posted[fp]} for kind, fp in fbs if fp in posted]
 
 
+def list_memory_all(limit: int = 500, kinds: tuple[str, ...] = (), source: str = "") -> list[dict]:
+    """Ghi chú của MỌI repo (cho lớp 4: học chéo repo vào checklist), lọc theo kind/source nếu có."""
+    with Session() as s:
+        q = s.query(RepoMemory)
+        if kinds:
+            q = q.filter(RepoMemory.kind.in_(kinds))
+        if source:
+            q = q.filter_by(source=source)
+        rows = q.order_by(RepoMemory.created_at.desc(), RepoMemory.id.desc()).limit(limit).all()
+        return [{"repo": r.repo, "note": r.note, "source": r.source or "", "kind": r.kind or "",
+                 "file": r.file or "", "category": r.category or ""} for r in rows]
+
+
+def feedback_profile_all(limit: int = 2000) -> list[dict]:
+    """Như feedback_profile nhưng gom mọi repo, kèm tên repo."""
+    with Session() as s:
+        repos = [r[0] for r in s.query(Feedback.repo).distinct().all()]
+    out = []
+    for repo in repos:
+        out += [{"repo": repo, **row} for row in feedback_profile(repo)]
+    return out[:limit]
+
+
 def feedback_stats(repo: str) -> dict[str, int]:
     with Session() as s:
         rows = s.query(Feedback.kind).filter_by(repo=repo).all()
