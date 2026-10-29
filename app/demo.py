@@ -1,12 +1,13 @@
-"""Nút "Review thử" của website demo: POST /demo/review.
+"""Nút "Kiểm tra code" của trang web: POST /demo/review.
 
-Khách (đã đăng nhập GitHub qua Firebase Auth) chọn một repo MẪU và một nhánh; server chạy đúng đường
-`python -m app.cli` như eval, đẩy tiến độ theo thời gian thực vào Firestore (collection
-`hermesqa_demo_jobs`) để trang web tự cập nhật, và kết quả đầy đủ nằm trong run log bình thường
-(collection `hermesqa_runs`, cùng id với job vì cli tôn trọng HERMESQA_RUN_ID).
+Bốn nguồn đầu vào (trường `source`): repo MẪU trong DEMO_REPOS + nhánh (như cũ), link GitHub công khai
+(repo / PR / nhánh / commit, tải về độ sâu 1), diff dán vào, hoặc đoạn code dán vào — ba nguồn sau được
+app.demo_sources chuẩn bị thành thư mục tạm + file diff. Server chạy đúng đường `python -m app.cli` như eval,
+ghi tiến độ vào job (Firestore nếu có, không thì file JSON cục bộ) để trang web hỏi lại mỗi 2 giây, và kết quả
+đầy đủ nằm trong run log bình thường (cùng id với job vì cli tôn trọng HERMESQA_RUN_ID).
 
 Ba hàng rào vì hạn mức LLM miễn phí là nút cổ chai:
-  1. chỉ repo trong DEMO_REPOS (tên=đường dẫn cục bộ), nhánh phải là tên hợp lệ — không bao giờ clone URL lạ;
+  1. chỉ fetch từ github.com với tên nhánh hợp lệ; repo mẫu phải nằm trong DEMO_REPOS; không bao giờ chạy code;
   2. mỗi người (uid Firebase, hoặc IP khi tắt xác thực) tối đa DEMO_MAX_PER_HOUR lần/giờ;
   3. một lúc chỉ chạy một review (409 nếu đang bận).
 
@@ -31,8 +32,11 @@ from collections import deque
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, BackgroundTasks, FastAPI, Header, HTTPException, Request
+from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+from app.demo_sources import MAX_TEXT_CHARS, InputError, parse_github_url, prepare
 
 log = logging.getLogger("hermesqa.demo")
 
@@ -134,6 +138,35 @@ class JobStore:
             return None
         with open(p, encoding="utf-8") as fh:
             return json.load(fh)
+
+    def list(self, limit: int = 20) -> list[dict]:
+        """Các job gần nhất (mới trước), chỉ phần tóm tắt để trang web vẽ danh sách lịch sử."""
+        jobs: list[dict] = []
+        if self.col is not None:
+            from firebase_admin import firestore
+            for d in self.col.order_by("queued_at", direction=firestore.Query.DESCENDING).limit(limit).stream():
+                jobs.append(d.to_dict())
+        else:
+            names = [n for n in os.listdir(self.local_dir) if n.endswith(".json")] if os.path.isdir(self.local_dir) else []
+            names.sort(key=lambda n: os.path.getmtime(os.path.join(self.local_dir, n)), reverse=True)
+            for n in names[:limit]:
+                try:
+                    with open(os.path.join(self.local_dir, n), encoding="utf-8") as fh:
+                        jobs.append(json.load(fh))
+                except (OSError, json.JSONDecodeError):
+                    continue
+        return [job_summary(j) for j in jobs]
+
+
+def job_summary(job: dict) -> dict:
+    """Phần đủ để vẽ một dòng trong lịch sử: không kèm findings/report/log."""
+    sev: dict[str, int] = {}
+    for f in job.get("findings") or []:
+        s = f.get("severity", "")
+        sev[s] = sev.get(s, 0) + 1
+    keys = ("job_id", "status", "source", "label", "repo", "base", "head", "user", "queued_at", "started_at",
+            "finished_at", "seconds", "findings_count", "error", "current", "skip_static")
+    return {**{k: job.get(k) for k in keys if k in job}, "by_severity": sev}
 
 
 _store: JobStore | None = None
@@ -256,6 +289,12 @@ class _Progress:
         self._dirty = True
         self.flush()
 
+    def mark(self, step: str, detail: str = "") -> None:
+        """Bước do chính server đánh dấu (tải repo...), không qua log của cli."""
+        self.current = step
+        self.steps.append({"t": round(time.time() - self.t0, 1), "step": step, "detail": detail})
+        self.flush(force=True)
+
     def fields(self) -> dict:
         return {"current": self.current, "steps": self.steps[-60:], "log_tail": list(self.tail),
                 "tokens_in": self.tokens_in, "tokens_out": self.tokens_out,
@@ -272,18 +311,31 @@ class _Progress:
             log.warning("không cập nhật được job %s: %s", self.job_id, e)
 
 
-def run_job(job_id: str, repo_name: str, repo_path: str, base: str, head: str, user: dict) -> None:
-    """Chạy trong BackgroundTasks: subprocess app.cli, đọc từng dòng log -> tiến độ; cuối cùng ghi kết quả."""
+def run_job(job_id: str, repo_name: str, repo_path: str, base: str, head: str, user: dict,
+            spec: dict | None = None) -> None:
+    """Chạy trong BackgroundTasks: subprocess app.cli, đọc từng dòng log -> tiến độ; cuối cùng ghi kết quả.
+
+    `spec` (nguồn github / diff / code, xem app.demo_sources) thì trước đó phải tải/chuẩn bị đầu vào vào một
+    thư mục tạm; không có `spec` là repo mẫu trong DEMO_REPOS như cũ."""
     store = get_store()
     t0 = time.time()
     out_dir = tempfile.mkdtemp(prefix="hqa-demo-")
+    src_dir = tempfile.mkdtemp(prefix="hqa-src-") if spec else ""
     prog = _Progress(store, job_id, t0)
     status, error, code = "failed", "", -1
+    diff_file = ""
     try:
         store.put(job_id, {"status": "running", "started_at": _now()})
+        if spec:
+            prog.mark("fetch", "chuẩn bị code cần xem")
+            prep = prepare(spec, src_dir, on_step=lambda d: prog.mark("fetch", d))
+            repo_path, base, head, diff_file = prep.repo_path, prep.base, prep.head, prep.diff_path
+            store.put(job_id, {"base": base, "head": head, "label": prep.label, "head_sha": prep.head_sha,
+                               "title": prep.title})
         env = dict(os.environ, HERMESQA_RUN_ID=job_id, HERMESQA_SOURCE="demo", PYTHONIOENCODING="utf-8",
                    PYTHONUNBUFFERED="1")
-        proc = subprocess.Popen(_cli_cmd(repo_path, base, head, out_dir), cwd=ROOT, env=env,
+        cmd = _cli_cmd(repo_path, base, head, out_dir) + (["--diff-file", diff_file] if diff_file else [])
+        proc = subprocess.Popen(cmd, cwd=ROOT, env=env,
                                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                 text=True, encoding="utf-8", errors="replace", bufsize=1)
         killer = threading.Timer(demo_settings.demo_timeout, proc.kill)
@@ -304,11 +356,15 @@ def run_job(job_id: str, repo_name: str, repo_path: str, base: str, head: str, u
                 error = "một số vai LLM lỗi, kết quả không đầy đủ"
         else:
             error = "\n".join(list(prog.tail)[-8:])
+    except InputError as e:               # đầu vào của người dùng có vấn đề: thông báo đã viết cho người thường
+        error = str(e)
     except Exception as e:
         log.exception("job demo %s lỗi", job_id)
         error = f"{type(e).__name__}: {e}"
     finally:
         _running.release()
+        if src_dir:
+            shutil.rmtree(src_dir, ignore_errors=True)
     result = {"status": status, "returncode": code, "error": error, "finished_at": _now(), **prog.fields()}
     try:
         fj = os.path.join(out_dir, "findings.json")
@@ -341,9 +397,13 @@ router = APIRouter(prefix="/demo", tags=["demo"])
 
 
 class ReviewRequest(BaseModel):
-    repo: str = Field(..., description="tên repo mẫu trong DEMO_REPOS")
-    head: str = Field(..., description="nhánh/commit cần review")
-    base: str = "main"
+    source: str = Field("repo", description="repo (mẫu trong DEMO_REPOS) | github (link công khai) | diff | code")
+    repo: str = Field("", description="tên repo mẫu trong DEMO_REPOS (source=repo)")
+    head: str = Field("", description="nhánh/commit cần review (source=repo)")
+    base: str = Field("", description="nhánh gốc; để trống = main (repo mẫu) hoặc tự tìm (github)")
+    url: str = Field("", description="link GitHub (source=github)")
+    text: str = Field("", description="nội dung diff hoặc đoạn code (source=diff|code)")
+    filename: str = Field("", description="tên file cho đoạn code dán vào; trống = tự đoán")
 
 
 @router.get("/repos")
@@ -351,11 +411,16 @@ def demo_repos() -> dict:
     repos = parse_repos(demo_settings.demo_repos)
     return {"repos": [{"name": n, "branches": list_branches(p)} for n, p in repos.items()],
             "max_per_hour": demo_settings.demo_max_per_hour, "require_auth": demo_settings.demo_require_auth,
-            "skip_static": demo_settings.demo_skip_static, "store": get_store().kind}
+            "skip_static": demo_settings.demo_skip_static, "store": get_store().kind,
+            "sources": ["repo", "github", "diff", "code"], "max_text_chars": MAX_TEXT_CHARS}
 
 
-@router.get("/jobs/{job_id}")
-def demo_job(job_id: str) -> dict:
+@router.get("/jobs")
+def demo_jobs(limit: int = 20) -> dict:
+    return {"jobs": get_store().list(max(1, min(limit, 100)))}
+
+
+def _load_job(job_id: str) -> dict:
     if not re.fullmatch(r"[0-9a-f]{12}", job_id):
         raise HTTPException(404, "không có job này")
     job = get_store().get(job_id)
@@ -364,16 +429,62 @@ def demo_job(job_id: str) -> dict:
     return job
 
 
+@router.get("/jobs/{job_id}")
+def demo_job(job_id: str) -> dict:
+    return _load_job(job_id)
+
+
+@router.get("/jobs/{job_id}/report.md")
+def demo_job_report(job_id: str) -> PlainTextResponse:
+    job = _load_job(job_id)
+    md = job.get("report_md")
+    if not md:
+        raise HTTPException(404, "job này chưa có báo cáo")
+    return PlainTextResponse(md, media_type="text/markdown; charset=utf-8",
+                             headers={"Content-Disposition": f'attachment; filename="hermesqa-{job_id}.md"'})
+
+
+def _validate_request(req: ReviewRequest) -> tuple[dict, dict | None]:
+    """-> (trường ghi vào job, spec cho run_job hoặc None với repo mẫu). Ném HTTPException 404/422."""
+    if req.source == "repo":
+        repos = parse_repos(demo_settings.demo_repos)
+        if req.repo not in repos:
+            raise HTTPException(404, f"repo '{req.repo}' không nằm trong danh sách demo")
+        base = req.base or "main"
+        for ref in (base, req.head):
+            if not REF_RE.match(ref) or ".." in ref:
+                raise HTTPException(422, f"tên nhánh không hợp lệ: {ref!r}")
+        return {"repo": req.repo, "repo_path": repos[req.repo], "base": base, "head": req.head,
+                "label": f"Ví dụ mẫu: {req.repo} · {req.head}"}, None
+    if req.source == "github":
+        try:
+            t = parse_github_url(req.url)
+        except InputError as e:
+            raise HTTPException(422, str(e))
+        if req.base and (not REF_RE.match(req.base) or ".." in req.base):
+            raise HTTPException(422, f"tên nhánh gốc không hợp lệ: {req.base!r}")
+        head = t.branch or (f"PR #{t.pr}" if t.pr else (t.commit or "(mới nhất)"))
+        return ({"repo": f"{t.owner}/{t.repo}", "base": req.base or "(tự tìm)", "head": head,
+                 "label": t.label, "input": req.url.strip()},
+                {"source": "github", "url": req.url.strip(), "base": req.base})
+    if req.source in ("diff", "code"):
+        if not req.text.strip():
+            raise HTTPException(422, "Chưa có nội dung để kiểm tra.")
+        if len(req.text) > MAX_TEXT_CHARS:
+            raise HTTPException(422, f"Nội dung quá dài ({len(req.text):,} ký tự, tối đa {MAX_TEXT_CHARS:,}).")
+        fn = req.filename.strip()
+        label = "Diff dán vào" if req.source == "diff" else ("Đoạn code dán vào" + (f" ({fn})" if fn else ""))
+        return ({"repo": "", "base": "", "head": "", "label": label, "input_chars": len(req.text)},
+                {"source": req.source, "text": req.text, "filename": fn})
+    raise HTTPException(422, f"Nguồn không hỗ trợ: {req.source!r}")
+
+
 @router.post("/review", status_code=202)
 def demo_review(req: ReviewRequest, request: Request, background: BackgroundTasks,
                 authorization: str | None = Header(None)) -> dict:
     user = verify_user(authorization, request.client.host if request.client else "?")
-    repos = parse_repos(demo_settings.demo_repos)
-    if req.repo not in repos:
-        raise HTTPException(404, f"repo '{req.repo}' không nằm trong danh sách demo")
-    for ref in (req.base, req.head):
-        if not REF_RE.match(ref) or ".." in ref:
-            raise HTTPException(422, f"tên nhánh không hợp lệ: {ref!r}")
+    fields, spec = _validate_request(req)
+    repo_path = fields.pop("repo_path", "")
     wait = limiter.retry_after(user["uid"])
     if wait:
         raise HTTPException(429, f"Mỗi người tối đa {demo_settings.demo_max_per_hour} lần/giờ, thử lại sau {wait // 60 + 1} phút",
@@ -382,15 +493,18 @@ def demo_review(req: ReviewRequest, request: Request, background: BackgroundTask
         raise HTTPException(409, "Đang có một review chạy, thử lại sau ít phút")
     limiter.hit(user["uid"])
     job_id = uuid.uuid4().hex[:12]
-    job = {"job_id": job_id, "status": "queued", "queued_at": _now(), "repo": req.repo,
-           "base": req.base, "head": req.head, "user": user["name"], "uid": user["uid"],
+    job = {"job_id": job_id, "status": "queued", "queued_at": _now(), "source": req.source, **fields,
+           "user": user["name"], "uid": user["uid"],
            "skip_static": demo_settings.demo_skip_static, "steps": [], "current": "queued"}
     try:
         get_store().put(job_id, job)
     except Exception as e:
         _running.release()
         raise HTTPException(503, f"không ghi được job: {e}")
-    background.add_task(run_job, job_id, req.repo, repos[req.repo], req.base, req.head, user)
+    if spec is None:
+        background.add_task(run_job, job_id, fields["repo"], repo_path, fields["base"], fields["head"], user)
+    else:
+        background.add_task(run_job, job_id, fields["repo"], "", fields["base"], fields["head"], user, spec)
     return {"job_id": job_id, "status": "queued", "store": get_store().kind}
 
 

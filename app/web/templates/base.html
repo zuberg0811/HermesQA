@@ -4,52 +4,47 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{% block title %}HermesQA{% endblock %} · HermesQA</title>
+<meta name="color-scheme" content="light dark">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect width=%2732%27 height=%2732%27 rx=%279%27 fill=%27%232f5bea%27/%3E%3Cpath d=%27M9.5 16.5l4.5 4.5 9-10%27 fill=%27none%27 stroke=%27%23fff%27 stroke-width=%273%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="/static/ui.css">
+<script src="/static/ui.js"></script>
 <script src="https://unpkg.com/htmx.org@1.9.12" defer></script>
-<style>
-  :root { --ink:#1f2933; --muted:#52606d; --line:#d9e2ec; --soft:#f5f8fb; --brand:#1d4e89; --ok:#2f855a; --warn:#b7791f; --bad:#c53030; }
-  * { box-sizing:border-box; }
-  body { margin:0; font:14.5px/1.55 "Segoe UI","Noto Sans",Arial,sans-serif; color:var(--ink); background:#fff; }
-  header { border-bottom:1px solid var(--line); background:#fff; position:sticky; top:0; z-index:5; }
-  .wrap { max-width:1180px; margin:0 auto; padding:0 20px; }
-  nav { display:flex; gap:4px; align-items:center; height:52px; }
-  nav .brand { font-weight:700; color:var(--brand); margin-right:18px; text-decoration:none; }
-  nav a { color:var(--muted); text-decoration:none; padding:8px 12px; border-radius:6px; }
-  nav a.active, nav a:hover { background:var(--soft); color:var(--ink); }
-  main { padding:24px 0 48px; }
-  h1 { font-size:22px; margin:0 0 6px; } h2 { font-size:17px; margin:28px 0 8px; color:var(--brand); }
-  h3 { font-size:15px; margin:18px 0 6px; }
-  p.lead { color:var(--muted); margin:0 0 16px; }
-  .cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:12px; margin:12px 0 20px; }
-  .card { border:1px solid var(--line); border-radius:8px; padding:12px 14px; background:#fff; }
-  .card .k { font-size:12px; color:var(--muted); text-transform:uppercase; letter-spacing:.06em; }
-  .card .v { font-size:24px; font-weight:700; margin-top:2px; }
-  .card .s { font-size:12px; color:var(--muted); }
-  table { width:100%; border-collapse:collapse; font-size:13.5px; margin:6px 0 14px; }
-  th { text-align:left; font-size:12px; letter-spacing:.04em; text-transform:uppercase; color:var(--muted); border-bottom:2px solid var(--line); padding:6px 8px; }
-  td { padding:6px 8px; border-bottom:1px solid var(--line); vertical-align:top; }
-  tr:nth-child(even) td { background:var(--soft); }
-  td.n, th.n { text-align:right; font-variant-numeric:tabular-nums; }
-  code { font:12.5px Consolas,"Cascadia Mono",monospace; background:#eef2f6; padding:1px 4px; border-radius:3px; }
-  .tag { display:inline-block; font-size:11.5px; padding:1px 7px; border-radius:10px; border:1px solid var(--line); color:var(--muted); }
-  .tag.SE { color:#1d4e89; border-color:#b6cdea; } .tag.QA { color:#6b46c1; border-color:#d6c6f2; } .tag.DevOps { color:#2f855a; border-color:#b8e0c6; }
-  .sev-critical { color:var(--bad); font-weight:600; } .sev-high { color:#c05621; font-weight:600; } .sev-medium { color:var(--warn); } .sev-low { color:var(--muted); }
-  .bar { height:8px; background:var(--soft); border-radius:4px; overflow:hidden; } .bar i { display:block; height:100%; background:var(--brand); }
-  .muted { color:var(--muted); } .small { font-size:12.5px; }
-  details { margin:6px 0; } summary { cursor:pointer; color:var(--brand); }
-  .empty { border:1px dashed var(--line); border-radius:8px; padding:18px; color:var(--muted); }
-  .scroll { overflow-x:auto; }
-  pre { background:#f7fafc; border:1px solid var(--line); border-radius:6px; padding:8px 10px; font-size:12.5px; overflow-x:auto; white-space:pre-wrap; }
-</style>
+{% block head %}{% endblock %}
 </head>
 <body>
-<header><div class="wrap"><nav>
-  <a class="brand" href="/dashboard">HermesQA</a>
-  <a href="/dashboard" class="{{ 'active' if page == 'index' }}">Tổng quan</a>
-  <a href="/dashboard/agents" class="{{ 'active' if page == 'agents' }}">Agent</a>
-  <a href="/dashboard/runs" class="{{ 'active' if page == 'runs' }}">Lần chạy</a>
-</nav></div></header>
-<main><div class="wrap">
+<header class="appbar">
+  <div class="wrap">
+    <a class="brand" href="/dashboard">
+      <svg class="mark" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="9" fill="var(--brand)"/><path d="M9.5 16.5l4.5 4.5 9-10" fill="none" stroke="var(--brand-fg)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <span>HermesQA<small>Trang kỹ thuật</small></span>
+    </a>
+    <nav class="nav" aria-label="Điều hướng">
+      <a href="/">Kiểm tra code</a>
+      <a href="/dashboard" class="{{ 'active' if page == 'index' }}">Tổng quan</a>
+      <a href="/dashboard/agents" class="{{ 'active' if page == 'agents' }}">Agent</a>
+      <a href="/dashboard/runs" class="{{ 'active' if page == 'runs' }}">Lần chạy</a>
+    </nav>
+    <span class="spacer"></span>
+    <div class="tools">
+      <a class="btn-icon" href="https://github.com/zuberg0811/HermesQA" rel="noopener" title="Mã nguồn trên GitHub" aria-label="Mã nguồn trên GitHub">
+        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .5a12 12 0 0 0-3.8 23.4c.6.1.8-.3.8-.6v-2.2c-3.3.7-4-1.4-4-1.4-.6-1.4-1.4-1.8-1.4-1.8-1.1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1.1 1.8 2.8 1.3 3.5 1 .1-.8.4-1.3.8-1.6-2.7-.3-5.5-1.3-5.5-5.9 0-1.3.5-2.4 1.2-3.2-.1-.3-.5-1.5.1-3.2 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0c2.3-1.5 3.3-1.2 3.3-1.2.7 1.7.3 2.9.1 3.2.8.8 1.2 1.9 1.2 3.2 0 4.6-2.8 5.6-5.5 5.9.4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.6A12 12 0 0 0 12 .5z"/></svg>
+      </a>
+      <button type="button" class="btn-icon theme-toggle" title="Chuyển sáng / tối" aria-label="Chuyển chế độ sáng tối">
+        <svg class="moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+        <svg class="sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+      </button>
+    </div>
+  </div>
+</header>
+<main class="wrap">
 {% block body %}{% endblock %}
-</div></main>
+<footer class="footer">
+  <span>Đồ án tốt nghiệp · Phí Thành Dương</span>
+  <span>HermesQA · bot review pull request với ba agent AI và công cụ quét tĩnh</span>
+</footer>
+</main>
 </body>
 </html>

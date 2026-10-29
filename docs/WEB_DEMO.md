@@ -1,4 +1,23 @@
-# Trang web demo HermesQA (dashboard)
+# Trang web HermesQA
+
+Hai trang trên cùng một tiến trình FastAPI (`app/main.py`):
+
+| Trang | Dành cho | Mã |
+|---|---|---|
+| `/` **Kiểm tra code** | người dùng phổ thông: đưa code vào (link GitHub công khai, dán code, dán diff), xem tiến độ và kết quả bằng lời thường, tải báo cáo, xem lại lịch sử | `app/web/static/home.{html,js}` + giao diện chung `app/web/static/ui.{css,js}`; API `app/demo.py` (`POST /demo/review`, `GET /demo/jobs`, `GET /demo/jobs/<id>`, `GET /demo/jobs/<id>/report.md`); chuẩn bị đầu vào `app/demo_sources.py` |
+| `/dashboard` **Trang kỹ thuật** | người chấm / người phát triển: số liệu eval, điểm theo agent, nhật ký từng lần chạy | `app/web/router.py`, `app/web/templates/` |
+
+Nguồn đầu vào của `/demo/review` (trường `source`): `github` (fetch độ sâu 1 từ github.com, tự tính diff: PR → so với nhánh gốc của PR; nhánh → so với nhánh mặc định; chỉ link repo → commit mới nhất), `diff` (dán `git diff`, không có ngữ cảnh file), `code` (biến thành diff "file mới", tên file tự đoán nếu bỏ trống), `repo` (repo mẫu trong `DEMO_REPOS`, dùng cho nút "Thử với ví dụ có sẵn"). Mọi nguồn đi qua đúng `python -m app.cli`; giới hạn: `DEMO_MAX_PER_HOUR` lượt/giờ mỗi người (theo IP khi `DEMO_REQUIRE_AUTH=false`), một lượt chạy tại một thời điểm, diff tối đa 400 000 ký tự, text dán vào tối đa 200 000 ký tự, code của người dùng không bao giờ được thực thi.
+
+---
+
+## Giao diện dùng chung
+
+Cả hai trang dùng một bộ giao diện không cần build: `app/web/static/ui.css` (token màu, thanh điều hướng, nút, thẻ, bảng, nhãn mức độ/vai, dòng thời gian) và `app/web/static/ui.js` (nút chuyển sáng/tối, nhớ trong `localStorage` khoá `hqa.theme`, mặc định theo hệ điều hành). Chữ Inter/JetBrains Mono tải từ Google Fonts, không có mạng thì rơi về font hệ thống. Trang chủ bố cục hai cột trên màn hình rộng (nhập liệu / tiến độ / kết quả bên trái, lịch sử + chú giải bên phải), một cột dưới 980 px. Trang chi tiết lần chạy tự tải lại mỗi 5 giây khi `status` còn `running`; danh sách lần chạy tự làm mới mỗi 15 giây bằng HTMX.
+
+---
+
+# Trang kỹ thuật `/dashboard`
 
 Bản đầu tiên: **đọc dữ liệu đã có** và hiển thị — không đụng vào pipeline review. Ba tab:
 

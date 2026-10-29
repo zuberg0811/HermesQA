@@ -3,8 +3,11 @@ Trả 202 ngay lập tức (GitHub timeout webhook sau 10s)."""
 import hashlib
 import hmac
 import logging
+from pathlib import Path
 
 from fastapi import FastAPI, Header, HTTPException, Request
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from redis import Redis
 from rq import Queue
 
@@ -15,10 +18,19 @@ from app.web.router import router as dashboard_router
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("hermesqa.api")
 
+STATIC_DIR = Path(__file__).parent / "web" / "static"
+
 app = FastAPI(title="HermesQA - AI Code Reviewer", version="0.1.0")
-app.include_router(dashboard_router)       # trang web demo: /dashboard
-install_demo(app)                          # nút "Review thử" của site Firebase: /demo/* + CORS (docs/FIREBASE_DEMO.md)
+app.include_router(dashboard_router)       # trang kỹ thuật: /dashboard
+install_demo(app)                          # nút "Kiểm tra code": /demo/* (+ CORS nếu có site ngoài, docs/FIREBASE_DEMO.md)
+app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 queue = Queue("reviews", connection=Redis.from_url(settings.redis_url))
+
+
+@app.get("/", include_in_schema=False)
+def home() -> FileResponse:
+    """Trang cho người dùng phổ thông: đưa code vào, xem kết quả tại chỗ (app/web/static/home.html)."""
+    return FileResponse(STATIC_DIR / "home.html", media_type="text/html; charset=utf-8")
 
 REVIEW_ACTIONS = {"opened", "synchronize", "reopened", "ready_for_review"}
 
