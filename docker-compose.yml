@@ -25,6 +25,9 @@ services:
 
   postgres:
     image: postgres:16-alpine
+    # Chỉ mở ra localhost: để script trên host (tools/learn_rules.py, psql) đọc repo memory
+    # với DATABASE_URL=postgresql+psycopg://hermesqa:hermesqa@localhost:5432/hermesqa
+    ports: ["127.0.0.1:5432:5432"]
     environment:
       POSTGRES_USER: hermesqa
       POSTGRES_PASSWORD: hermesqa
