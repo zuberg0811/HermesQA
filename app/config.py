@@ -104,6 +104,11 @@ class Settings(BaseSettings):
             raise ValueError(f"không có profile LLM '{name}' — cần LLM_{name.upper()}_MODEL (+ _BASE_URL, _API_KEY) trong .env; đã khai báo: {have}")
         self.llm_profile = name.lower()
         self.agent_backend = p.get("backend", "openai_compat")
+        if self.agent_backend == "anthropic":
+            # AnthropicBackend đọc anthropic_model/anthropic_api_key, không đọc llm_model/llm_api_key
+            self.anthropic_model = p["model"]
+            if p.get("api_key"):
+                self.anthropic_api_key = p["api_key"]
         self.llm_model = p["model"]
         if p.get("base_url"):
             self.llm_base_url = p["base_url"]

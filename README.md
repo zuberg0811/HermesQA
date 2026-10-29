@@ -64,6 +64,17 @@ docker compose up --build
 ## 3. Dùng Hermes Agent thay LLM trực tiếp
 Đặt `AGENT_BACKEND=hermes_cli` và chỉnh `HERMES_CMD` thành lệnh của bản Hermes bạn cài (prompt qua stdin, JSON ra stdout). Skill của từng vai nằm ở `app/skills/<Role>/SKILL.md` theo định dạng skill Markdown (frontmatter `name/description`) nên có thể copy thẳng vào thư mục skills của Hermes. Nếu bản Hermes của bạn không có CLI phù hợp, viết adapter mới trong `app/review/agent.py` theo `AgentBackend` protocol (một hàm `run(role, prompt) -> AgentOutput`).
 
+## 3b. Dùng Claude Code headless (không cần API key)
+Thư mục [`claude-server/`](claude-server/README.md) là một server Node nhỏ phơi endpoint OpenAI-compatible, bên trong gọi Claude qua Claude Agent SDK bằng tài khoản đã `claude login` trên máy. hermesQA dùng nó qua `OpenAICompatBackend`, không sửa code.
+```powershell
+claude login                                   # một lần
+cd claude-server; npm install; npm start       # http://localhost:3100/v1
+# cửa sổ khác:
+$env:PYTHONIOENCODING = "utf-8"
+.venv\Scripts\python.exe -m app.cli --repo eval/dataset-repo --base main --head case/cmd-shell-true --skip-static --profile claudecode --out report.md
+```
+Profile `claudecode` (`LLM_CLAUDECODE_*`) có sẵn trong `.env.example`. SKILL.md của từng vai được nối vào preset system prompt của Claude Code; text trả về được làm sạch thành đúng một JSON object.
+
 ## 4. Cấu hình theo repo
 Copy `.hermesqa.yml.example` → `.hermesqa.yml` ở gốc repo được review: chọn vai, ignore glob, convention, max comments, có block merge khi critical hay không.
 
@@ -86,7 +97,6 @@ python tools/learn_rules.py propose --docs python.md,tests.md --profile claudeco
 python tools/learn_rules.py gate --doc python.md --baseline eval/out-v3-rescored --out eval/out-learned --config llm --profile claudecode
 ```
 
-
 ## 5. Test
 ```bash
 pip install pytest && pytest -q
@@ -100,9 +110,14 @@ python eval/run_eval.py --configs static    # rồi: --configs llm,both (cần L
 python eval/score.py                        # -> eval/out/results.md
 ```
 
-## 7. Website demo (dashboard + Firebase)
-- Dashboard nội bộ tại `/dashboard` của API (điểm theo agent, nhật ký từng lần chạy): xem [`docs/WEB_DEMO.md`](docs/WEB_DEMO.md).
-- Trang công khai trên Firebase Hosting (đăng nhập GitHub, lịch sử realtime từ Firestore, nút "Review thử" gọi `/demo/review`): xem [`docs/FIREBASE_DEMO.md`](docs/FIREBASE_DEMO.md). Mã ở `web/public/`, `app/demo.py`, `firestore.rules`; đẩy bảng benchmark bằng `python tools/publish_eval.py`.
+## 7. Trang web (người dùng phổ thông + trang kỹ thuật)
+Một tiến trình FastAPI phục vụ tất cả, không cần Redis/Postgres/Firebase để dùng phần web:
+```bash
+.venv/Scripts/python.exe -m uvicorn app.main:app --port 8000     # mở http://localhost:8000/
+```
+- **`/` — Kiểm tra code** (viết cho người không chuyên): dán link GitHub công khai (repo / PR / nhánh / commit), dán đoạn code, hoặc dán `git diff`; xem tiến độ bằng lời thường, kết quả gom theo mức độ (Nghiêm trọng / Cần sửa / Nên sửa / Gợi ý) và nhóm (Bảo mật, Lỗi logic, Kiểm thử…), tải báo cáo Markdown, xem lại các lần trước. Mã ở `app/web/static/`, API ở `app/demo.py` (+ `app/demo_sources.py` chuẩn bị đầu vào). Cấu hình `.env`: `DEMO_REQUIRE_AUTH=false` khi chạy cục bộ, `DEMO_MAX_PER_HOUR`, `DEMO_SKIP_STATIC=false` nếu máy có Docker, `DEMO_REPOS` cho nút "Thử với ví dụ có sẵn".
+- **`/dashboard` — trang kỹ thuật**: điểm eval theo agent, nhật ký từng lần chạy, token; xem [`docs/WEB_DEMO.md`](docs/WEB_DEMO.md).
+- Tuỳ chọn sau này: đăng nhập GitHub qua Firebase Auth và site tĩnh trên Firebase Hosting — thiết kế ở [`docs/FIREBASE_DEMO.md`](docs/FIREBASE_DEMO.md), chưa bật.
 
 ## Bảo mật
 - Code PR **không bao giờ được thực thi**; chỉ static tools chạy trong container `--network none`, `cap_drop ALL`, giới hạn CPU/RAM, mount source read-only.

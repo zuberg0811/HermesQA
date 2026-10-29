@@ -25,3 +25,7 @@ eval/out-multi-v3-rescored
 web/public/firebase-config.js
 .firebase/
 eval/out-*/
+
+# claude-server (Node): dependency và cấu hình riêng máy
+claude-server/node_modules/
+claude-server/.env

@@ -1,0 +1,14 @@
+{
+  "name": "hermesqa-claude-server",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "OpenAI-compatible endpoint cho hermesQA, bên trong gọi Claude Code headless (Claude Agent SDK)",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.3.299"
+  }
+}

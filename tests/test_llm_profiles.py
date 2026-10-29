@@ -40,6 +40,19 @@ def test_profiles_from_environment_and_switch(monkeypatch):
         s.use_profile("claude")
 
 
+def test_anthropic_profile_sets_anthropic_fields(monkeypatch):
+    """Profile _BACKEND=anthropic phải đưa model/key vào anthropic_* vì AnthropicBackend chỉ đọc các field đó."""
+    _clear_profiles(monkeypatch)
+    monkeypatch.setenv("LLM_CLAUDE_BACKEND", "anthropic")
+    monkeypatch.setenv("LLM_CLAUDE_MODEL", "claude-sonnet-5-5")
+    monkeypatch.setenv("LLM_CLAUDE_API_KEY", "sk-ant-test")
+    s = Settings(_env_file=None, anthropic_model="claude-opus-5-5", **BASE)
+    s.use_profile("claude")
+    assert s.agent_backend == "anthropic"
+    assert (s.anthropic_model, s.anthropic_api_key) == ("claude-sonnet-5-5", "sk-ant-test")
+    assert s.llm_model == "claude-sonnet-5-5"          # run_eval.resolve_model in tên model này
+
+
 def test_llm_profile_env_applies_at_startup(monkeypatch):
     _clear_profiles(monkeypatch)
     monkeypatch.setenv("LLM_MUSE_MODEL", "muse-spark-1.2")

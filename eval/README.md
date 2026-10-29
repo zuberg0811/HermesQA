@@ -80,6 +80,8 @@ tự nhận thư mục `eval/out-muse` như mọi `eval/out*`.
 | `eval/out-v3` / `eval/out-multi-v3` | Pipeline MỚI (7 đề xuất OCR), chạy thật 07/10 bằng gemini-3.1-flash-lite: `llm`, `both`, `llm_noverify`, `llm_legacyverify`; kèm `results_tol0.md` và `fp_judgement_<config>.md` |
 | `eval/out-v3-rescored` | `eval/out-v3` sau khi rescore với quy tắc gộp "mọi finding static cùng dòng là một cụm" (sửa sau khi đọc FP của `both`) — số `both` chính thức lấy ở đây |
 | `eval/aacr/out` | Pilot PR thật (AACR-Bench, 15 PR Python), gemini-3.5-flash-lite: `llm`, `both`, `both_hunk` (lọc static theo hunk, áp offline) — `results.md` |
+| `eval/out-claudecode` / `-low` / `-custom` | Claude Code headless (claude-opus-5-5 qua `claude-server/`), 14–15/10: `llm` với preset+medium / preset+low / custom (chỉ SKILL.md); thư mục `-custom` có thêm `static`, `both` chạy thật với Docker 15/10 — xem `docs/EVAL_CLAUDECODE_2026-10-15.md` |
+| `eval/out-multi-claudecode` | Bộ đa ngôn ngữ chạy bằng Claude Code (custom), `llm` + `both`, 15/10 |
 
 ## Ghi chú phương pháp
 - `run_eval.py` đặt `MIN_SEVERITY_TO_COMMENT=low` và `MIN_CONFIDENCE=0.0` cho tiến trình con
