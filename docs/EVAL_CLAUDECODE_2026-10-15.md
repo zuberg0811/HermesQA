@@ -150,3 +150,28 @@ Theo category (`llm` = `both`): bug 6/7, performance 0/1, security 7/7, test 3/3
 
 Thư mục kết quả: `eval/out-claudecode-custom/` (`static`, `llm`, `both`, `results.md`, `results_tol0.md`),
 `eval/out-multi-claudecode/` (`llm`, `both`). Nhật ký từng case: `runs_<config>.json`.
+
+## 5. Cập nhật 30/10/2026: đã sửa hai điểm ở mục 4, chấm lại offline
+
+Hai sửa trong pipeline (không đụng model, không đụng prompt):
+
+1. `static_tools.collect()`: luật semgrep về hạ tầng (nhận ra qua `metadata.technology`, tiền tố `check_id`, hoặc tên
+   file Dockerfile / workflow CI) mang nhãn `devops` thay vì `bug`; luật semgrep xếp loại security vẫn là `security`.
+2. `Finding.categories`: khi `postprocess.dedupe()` gộp một finding khác category vào cụm, nhãn đó được giữ ở
+   trường phụ; `eval/score.py` chấm trúng nếu nhãn chính **hoặc** nhãn phụ nằm trong danh sách chấp nhận.
+
+Chấm lại bằng `eval/rescore.py` (áp lại hậu xử lý mới lên finding đã lưu; với kết quả cũ không còn
+`semgrep.json` gốc nên nhãn semgrep được suy từ tên file + mã luật, tức hai trong ba tiêu chí của `collect()`).
+Điểm (2) chưa đo được offline vì finding cũ đã gộp rồi, không còn category của phần bị gộp; cần chạy lại LLM.
+
+| Bộ Python, 35 case | Precision | Recall | F1 | Ghi chú |
+|---|---|---|---|---|
+| Claude `static` trước → sau | 80,8 → 88,5 | 58,3 → 63,9 | 67,7 → **74,2** | 2 FP thành TP |
+| Claude `both` trước → sau | 71,7 → 76,1 | 91,7 → 97,2 | 80,5 → **85,4** | đúng như dự đoán ở mục 4 |
+| Claude `llm` | 67,3 | 97,2 | 79,5 | không đổi (không có semgrep) |
+| Gemini `both` trước → sau | 81,0 → 83,3 | 94,4 → 97,2 | 87,2 → **89,7** | lần đầu `both` ≥ `llm` (89,5) với Gemini |
+| Gemini `llm` | 85,0 | 94,4 | 89,5 | không đổi |
+
+Thư mục: `eval/out-claudecode-custom-relabel/`, `eval/out-v3-relabel/` (bị gitignore như mọi `eval/out-*`; tạo lại
+bằng `python eval/rescore.py --src <cũ> --dst <mới>` rồi `python eval/score.py --out <mới>`). Test:
+`tests/test_category_labels.py`.

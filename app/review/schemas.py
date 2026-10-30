@@ -10,6 +10,10 @@ class Finding(BaseModel):
     line: int = Field(ge=1)
     severity: Severity
     category: str                      # security | bug | performance | test | style | devops | ...
+    # Nhãn của các finding bị gộp vào finding này mà KHÁC category chính (postprocess.dedupe). Cụm static +
+    # LLM cùng chỗ thường là một lỗi với hai cách gọi (ruff "bug" / LLM "maintainability"); giữ lại để
+    # eval và policy không mất thông tin khi nhãn chính không trùng ground truth.
+    categories: list[str] = []
     title: str
     explanation: str
     suggested_fix: str = ""

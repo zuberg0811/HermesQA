@@ -27,11 +27,20 @@ os.environ.setdefault("GITHUB_WEBHOOK_SECRET", "x")
 
 from app.review import postprocess  # noqa: E402
 from app.review.schemas import Finding  # noqa: E402
-from app.review.static_tools import is_noise  # noqa: E402
+from app.review.static_tools import _semgrep_category, is_noise  # noqa: E402
+
+
+def _relabel_semgrep(f: Finding) -> Finding:
+    """Nhãn semgrep cho luật hạ tầng đã sửa trong static_tools.collect() (Dockerfile/CI -> "devops" thay vì "bug").
+    Kết quả cũ không còn semgrep.json gốc (mất check_id, metadata) nên suy lại từ tên file + mã luật — đúng hai
+    trong ba tiêu chí collect() dùng; luật security đã là "security" từ đầu nên không bị đụng."""
+    if f.source == "semgrep" and f.category == "bug":
+        f.category = _semgrep_category({"check_id": f.title, "path": f.file, "extra": {}})
+    return f
 
 
 def reprocess(raw: list[dict]) -> list[dict]:
-    findings = [Finding.model_validate(r) for r in raw]
+    findings = [_relabel_semgrep(Finding.model_validate(r)) for r in raw]
     findings = [f for f in findings if not is_noise(f)]
     return [f.model_dump() for f in postprocess.dedupe(findings)]
 

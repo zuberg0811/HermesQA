@@ -76,7 +76,11 @@ def _is_duplicate(kept: Finding, new: Finding) -> bool:
 
 
 def _attach(primary: Finding, other: Finding) -> None:
-    """Đính finding bị gộp vào finding chính để comment không mất thông tin."""
+    """Đính finding bị gộp vào finding chính để comment không mất thông tin.
+    Category khác nhau thì ghi vào `categories` phụ (eval/score.py và policy đọc được), không chỉ vào văn bản."""
+    for c in (other.category, *other.categories):
+        if c and c != primary.category and c not in primary.categories:
+            primary.categories.append(c)
     note = " ".join(other.explanation.split())
     if len(note) > 300:
         note = note[:297] + "..."

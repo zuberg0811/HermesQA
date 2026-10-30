@@ -99,6 +99,34 @@ def _rel(p: str) -> str:
     return p.replace("/src/", "", 1).lstrip("/")
 
 
+INFRA_TECH = ("dockerfile", "docker-compose", "github-actions", "gitlab", "kubernetes", "helm", "terraform", "ansible", "nginx")
+INFRA_FILES = ("dockerfile", "docker-compose.yml", "docker-compose.yaml", ".gitlab-ci.yml")
+
+
+def _semgrep_category(r: dict) -> str:
+    """Nhãn category cho một kết quả semgrep.
+
+    Luật về hạ tầng (Dockerfile, CI, k8s, terraform...) là việc của vai DevOps -> "devops", trừ khi chính
+    semgrep xếp luật đó là security. Trước đây mọi luật không-security đều thành "bug": với Dockerfile, cụm
+    gộp lấy nhãn theo finding chính nên hadolint "devops" cùng dòng bị semgrep "bug" (nặng hơn) đè mất nhãn
+    -> eval mất 2 TP (báo cáo 15/10). Nhận dạng theo metadata.technology của luật, tiền tố check_id, và tên
+    file, để không phụ thuộc một nguồn.
+    """
+    ex = r.get("extra", {})
+    meta = ex.get("metadata", {}) or {}
+    if "security" in str(meta).lower():
+        return "security"
+    tech = meta.get("technology") or []
+    tech = [str(t).lower() for t in (tech if isinstance(tech, list) else [tech])]
+    check_id = str(r.get("check_id", "")).lower()
+    path = str(r.get("path", "")).replace("\\", "/")
+    base = os.path.basename(path).lower()
+    if any(t in INFRA_TECH for t in tech) or check_id.split(".")[0] in INFRA_TECH \
+            or base in INFRA_FILES or base.endswith(".dockerfile") or "/.github/workflows/" in path:
+        return "devops"
+    return "bug"
+
+
 def collect(out_dir: str) -> list[Finding]:
     findings: list[Finding] = []
 
@@ -107,7 +135,7 @@ def collect(out_dir: str) -> list[Finding]:
         findings.append(Finding(
             file=_rel(r["path"]), line=r["start"]["line"],
             severity=SEMGREP_SEV.get(ex.get("severity", "WARNING"), "medium"),
-            category="security" if "security" in str(ex.get("metadata", {})).lower() else "bug",
+            category=_semgrep_category(r),
             title=r["check_id"].split(".")[-1], explanation=ex.get("message", ""),
             suggested_fix=ex.get("fix", "") or "", confidence=0.95, role="static:semgrep", source="semgrep"))
 

@@ -42,7 +42,8 @@ def matched_indices(findings: list[dict], truths: list[dict], tol: int = LINE_TO
                 continue
             if abs(int(f["line"]) - int(t["line"])) > tol:
                 continue
-            if f.get("category") not in t["categories"]:
+            # nhãn chính hoặc nhãn phụ (finding bị gộp vào cụm, postprocess.dedupe) khớp danh sách chấp nhận
+            if f.get("category") not in t["categories"] and not any(c in t["categories"] for c in f.get("categories") or []):
                 continue
             d = abs(int(f["line"]) - int(t["line"]))
             if best is None or d < best[0]:
