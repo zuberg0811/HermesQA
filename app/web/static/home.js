@@ -14,6 +14,7 @@ const CAT = {
 };
 const ROLE = { SE: "kỹ sư phần mềm", QA: "kiểm thử", DevOps: "vận hành" };
 const ICON_CHECK = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5 9-10"/></svg>`;
+const ICON_PIN = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21s7-6.1 7-11a7 7 0 1 0-14 0c0 4.9 7 11 7 11z"/><circle cx="12" cy="10" r="2.5"/></svg>`;
 const ICON_X = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>`;
 
 const state = { mode: "github", jobId: null, job: null, poll: null, sample: null, filterSev: null, filterCat: null };
@@ -141,6 +142,7 @@ const STEP_LABEL = (step, detail) => {
   if (step === "fetch") return detail ? "Chuẩn bị code: " + detail : "Chuẩn bị code cần xem";
   if (step === "static") return "Quét bằng các công cụ kiểm tra tự động";
   if (step === "static:done") return "Quét tự động xong" + (detail ? ` (${detail})` : "");
+  if (step === "stale") return "Tìm khoá hết hạn và code lỗi thời";
   if (step === "postprocess") return "Gộp và lọc nhận xét";
   if (step === "done") return "Tổng hợp kết quả" + (detail ? ` (${detail})` : "");
   if ((m = step.match(/^llm:(\w+)$/))) return `Đọc code dưới góc nhìn ${ROLE[m[1]] || m[1]}`;
@@ -196,7 +198,7 @@ function renderResult(job) {
   const catChips = Object.keys(byCat).sort().map((c) => `<button type="button" class="chip ${state.filterCat === c ? "on" : ""}" data-cat="${esc(c)}">${esc(CAT[c] || c)} <span class="cnt">${byCat[c]}</span></button>`).join("");
 
   const shown = fs.filter((f) => (!state.filterSev || f.severity === state.filterSev) && (!state.filterCat || f.category === state.filterCat));
-  const list = shown.length ? shown.map(findingCard).join("") : (total ? `<div class="empty">Không có nhận xét nào khớp bộ lọc.</div>` : "");
+  const list = shown.length ? shown.map((f) => findingCard(f, job)).join("") : (total ? `<div class="empty">Không có nhận xét nào khớp bộ lọc.</div>` : "");
 
   const tokens = (job.tokens_in || 0) + (job.tokens_out || 0);
   const tech = `<details class="block" style="margin-top:16px"><summary>Chi tiết kỹ thuật</summary>
@@ -227,17 +229,44 @@ function renderResult(job) {
   }));
 }
 
-function findingCard(f) {
+// Mô tả vị trí nhận xét bằng lời cho người không quen đọc "file:line".
+//   - code dán vào, không đặt tên file: "Dòng 4 của đoạn code bạn dán" (tên file chỉ là tên tạm do hệ thống đoán)
+//   - diff dán vào / GitHub:            "Dòng 4 · file app/x.py"
+function whereText(f, job) {
+  const src = job?.source;
+  const guessed = src === "code" && !/\(/.test(job?.label || "");   // label "Đoạn code dán vào (tên)" khi người dùng tự đặt tên
+  const line = Number(f.line) > 0 ? `Dòng ${Number(f.line)}` : "";
+  if (src === "code") {
+    const what = guessed ? "của đoạn code bạn dán" : `· file ${esc(f.file)}`;
+    const note = guessed ? ` <span class="muted">(hệ thống tạm gọi là ${esc(f.file)})</span>` : "";
+    return `${line ? `<b>${line}</b> ${what}` : `Toàn bộ đoạn code bạn dán`}${note}`;
+  }
+  const changed = src === "diff" ? " trong phần thay đổi" : "";
+  return line ? `<b>${line}</b> · file <b>${esc(f.file)}</b>${changed}` : `Cả file <b>${esc(f.file)}</b>${changed}`;
+}
+
+// Với code dán vào, lấy đúng dòng đó từ ô nhập để người dùng thấy ngay (chỉ khi AI không trích sẵn).
+function sourceLine(f, job) {
+  if (job?.source !== "code" || !(Number(f.line) > 0)) return "";
+  const text = $("code")?.value || "";
+  if (!text) return "";
+  const ln = text.replace(/\r\n/g, "\n").split("\n")[Number(f.line) - 1];
+  if (ln == null || !ln.trim()) return "";
+  return `<pre class="src-line"><span class="ln">${Number(f.line)}</span>${esc(ln)}</pre>`;
+}
+
+function findingCard(f, job) {
   const who = f.source === "llm" || !f.source ? `AI, góc nhìn ${ROLE[f.role] || f.role || "?"}` : `công cụ ${f.source}`;
   const conf = f.confidence != null ? `độ chắc chắn ${Math.round(f.confidence * 100)} %` : "";
   const fix = (f.suggested_fix || "").trim();
   const fixIsCode = /\n/.test(fix) || /[{};=()]/.test(fix) && fix.length < 400;
+  const code = f.existing_code ? `<pre>${esc(f.existing_code)}</pre>` : sourceLine(f, job);
   return `<article class="finding ${esc(f.severity)}">
     <header><span class="sev ${esc(f.severity)}">${SEV[f.severity] || esc(f.severity)}</span>
-      <span class="cat">${esc(CAT[f.category] || f.category)}</span>
-      <span class="loc">${esc(f.file)}:${esc(f.line)}</span></header>
+      <span class="cat">${esc(CAT[f.category] || f.category)}</span></header>
     <h4>${esc(f.title)}</h4>
-    ${f.existing_code ? `<pre>${esc(f.existing_code)}</pre>` : ""}
+    <p class="where">${ICON_PIN}${whereText(f, job)}</p>
+    ${code}
     <p><b>Vấn đề:</b> ${esc(f.explanation)}</p>
     ${fix ? `<div class="fix"><b>Cách sửa:</b>${fixIsCode ? `<pre>${esc(fix)}</pre>` : ` ${esc(fix)}`}</div>` : ""}
     <div class="meta"><span>Phát hiện bởi ${esc(who)}</span>${conf ? `<span>${conf}</span>` : ""}${f.anchor ? `<span>ghim theo ${esc(f.anchor)}</span>` : ""}</div>

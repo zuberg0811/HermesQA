@@ -3,10 +3,11 @@ Trả 202 ngay lập tức (GitHub timeout webhook sau 10s)."""
 import hashlib
 import hmac
 import logging
+import re
 from pathlib import Path
 
 from fastapi import FastAPI, Header, HTTPException, Request
-from fastapi.responses import FileResponse
+from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from redis import Redis
 from rq import Queue
@@ -27,10 +28,23 @@ app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 queue = Queue("reviews", connection=Redis.from_url(settings.redis_url))
 
 
+_STATIC_REF = re.compile(r'"/static/([\w.-]+)"')      # home.html chỉ dùng dấu nháy kép
+
+
+def _versioned_static(html: str) -> str:
+    """Gắn mốc sửa file vào /static/x.js -> /static/x.js?v=1730000000 để trình duyệt nạp bản mới ngay sau khi sửa,
+    thay vì dùng lại bản cũ trong cache (người dùng từng thấy giao diện không đổi dù code đã đổi)."""
+    def sub(m: re.Match) -> str:
+        path = STATIC_DIR / m.group(1)
+        return f'"/static/{m.group(1)}?v={int(path.stat().st_mtime)}"' if path.is_file() else m.group(0)
+    return _STATIC_REF.sub(sub, html)
+
+
 @app.get("/", include_in_schema=False)
-def home() -> FileResponse:
+def home() -> HTMLResponse:
     """Trang cho người dùng phổ thông: đưa code vào, xem kết quả tại chỗ (app/web/static/home.html)."""
-    return FileResponse(STATIC_DIR / "home.html", media_type="text/html; charset=utf-8")
+    html = _versioned_static((STATIC_DIR / "home.html").read_text(encoding="utf-8"))
+    return HTMLResponse(html, headers={"Cache-Control": "no-cache"})
 
 REVIEW_ACTIONS = {"opened", "synchronize", "reopened", "ready_for_review"}
 

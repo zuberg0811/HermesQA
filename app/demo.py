@@ -104,6 +104,7 @@ class JobStore:
     def __init__(self, credentials_path: str, collection: str, local_dir: str):
         self.local_dir = local_dir
         self.col = None
+        self._lock = threading.Lock()   # đọc/ghi file trong cùng tiến trình không chen nhau (Windows không cho replace file đang mở)
         if credentials_path:
             try:
                 from firebase_admin import firestore
@@ -122,22 +123,52 @@ class JobStore:
         if self.col is not None:
             self.col.document(job_id).set(fields, merge=True)
             return
-        cur = self.get(job_id) or {}
-        cur.update(fields)
+        with self._lock:
+            cur = self._read(job_id) or {}
+            cur.update(fields)
+            self._write(job_id, cur)
+
+    def _write(self, job_id: str, data: dict) -> None:
+        """Ghi qua file tạm rồi đổi tên để file chính luôn là JSON trọn vẹn.
+        Trên Windows, đổi tên bị PermissionError (WinError 5) nếu file đích đang được tiến trình khác mở
+        (trình duyệt poll /demo/jobs, phần mềm diệt virus...). Thử lại vài lần; vẫn kẹt thì ghi đè thẳng."""
+        final = os.path.join(self.local_dir, f"{job_id}.json")
         tmp = os.path.join(self.local_dir, f"{job_id}.json.tmp")
         with open(tmp, "w", encoding="utf-8") as fh:
-            json.dump(cur, fh, ensure_ascii=False, indent=1)
-        os.replace(tmp, os.path.join(self.local_dir, f"{job_id}.json"))
+            json.dump(data, fh, ensure_ascii=False, indent=1)
+        for attempt in range(5):
+            try:
+                os.replace(tmp, final)
+                return
+            except PermissionError:
+                time.sleep(0.05 * (attempt + 1))
+        log.warning("không đổi tên được %s (file đang bị giữ), ghi đè trực tiếp", final)
+        with open(final, "w", encoding="utf-8") as fh:
+            json.dump(data, fh, ensure_ascii=False, indent=1)
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+
+    def _read(self, job_id: str) -> dict | None:
+        p = os.path.join(self.local_dir, f"{job_id}.json")
+        if not os.path.exists(p):
+            return None
+        for attempt in range(5):
+            try:
+                with open(p, encoding="utf-8") as fh:
+                    return json.load(fh)
+            except (PermissionError, json.JSONDecodeError):   # đang được ghi dở / replace chưa xong
+                time.sleep(0.05 * (attempt + 1))
+        with open(p, encoding="utf-8") as fh:
+            return json.load(fh)
 
     def get(self, job_id: str) -> dict | None:
         if self.col is not None:
             d = self.col.document(job_id).get()
             return d.to_dict() if d.exists else None
-        p = os.path.join(self.local_dir, f"{job_id}.json")
-        if not os.path.exists(p):
-            return None
-        with open(p, encoding="utf-8") as fh:
-            return json.load(fh)
+        with self._lock:
+            return self._read(job_id)
 
     def list(self, limit: int = 20) -> list[dict]:
         """Các job gần nhất (mới trước), chỉ phần tóm tắt để trang web vẽ danh sách lịch sử."""

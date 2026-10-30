@@ -233,6 +233,11 @@ details.adv[open] summary::before { transform: rotate(45deg); }
 .finding .fix { margin-top: 8px; font-size: 14.5px; }
 .finding .meta { margin-top: 10px; font-size: 13px; color: var(--muted); display: flex; gap: 6px 14px; flex-wrap: wrap; }
 .finding pre { margin: 8px 0 0; }
+.finding .where { margin: 2px 0 0; font-size: 14px; color: var(--muted); display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.finding .where svg { width: 15px; height: 15px; flex: none; color: var(--brand); }
+.finding .where b { color: var(--fg); font-weight: 650; }
+.finding .src-line { display: flex; gap: 10px; align-items: baseline; }
+.finding .src-line .ln { flex: none; min-width: 2.5ch; text-align: right; color: var(--muted); user-select: none; border-right: 1px solid var(--line-2); padding-right: 8px; }
 
 /* ------------------------------------------------------------------ bố cục trang */
 .page-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin: 28px 0 18px; }
