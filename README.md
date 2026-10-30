@@ -12,6 +12,10 @@ GitHub webhook ─▶ FastAPI (api) ─▶ Redis queue ─▶ Worker
                                                    └─ PR review + Checks API + report .md + Postgres
 ```
 
+Sơ đồ đầy đủ (đầu vào, 8 bước của worker, đầu ra, 5 vòng tự học): [docs/pipeline.png](docs/pipeline.png)
+
+![Pipeline HermesQA](docs/pipeline.png)
+
 ## Cấu trúc
 ```
 app/
