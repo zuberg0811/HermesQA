@@ -233,6 +233,7 @@ def verify_user(authorization: str | None, client_ip: str) -> dict:
 STEP_PATTERNS = [
     # (regex trên MỘT dòng stdout/stderr của app.cli, tên bước, chi tiết). Thứ tự = thứ tự ưu tiên.
     (re.compile(r"hermesqa\.sandbox"), "static", "quét công cụ tĩnh trong sandbox"),
+    (re.compile(r"hermesqa\.stale"), "stale", "tìm khoá hết hạn và code lỗi thời"),
     (re.compile(r"\[agent\] (\w+) LỖI"), "failed:{0}", "vai {0} lỗi"),
     (re.compile(r"\[agent\] (\w+) \.\.\."), "llm:{0}", "đang hỏi vai {0}"),
     (re.compile(r"(\d+) findings? ->"), "done", "{0} nhận xét"),

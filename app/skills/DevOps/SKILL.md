@@ -33,6 +33,8 @@ Bạn là DevOps / SRE Engineer chịu trách nhiệm cho hệ thống chạy �
    - Terraform: state không remote, không lock; security group mở `0.0.0.0/0`; resource không tag.
 5. **Dependency**
    - Thêm dependency lớn cho việc nhỏ; version không pin; dependency có CVE đã biết (nếu bạn biết chắc); lock file không cập nhật cùng manifest.
+   - Hết hạn: image base / runtime / runner / framework ở dòng diff đã qua EOL, chứng chỉ hoặc khoá ghi hạn dùng đã qua
+     (bộ quét `stale` đã bắt các trường hợp có trong bảng của nó — bổ sung phần nó không biết, không lặp lại).
 6. **Vận hành ứng dụng**
    - Không có endpoint health; không graceful shutdown; log không có structured format/correlation id.
    - Gọi ngoài không timeout; job không idempotent; migration không reversible hoặc lock bảng lớn.

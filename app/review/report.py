@@ -32,7 +32,7 @@ TEMPLATE = Template("""# HermesQA Review Report — PR #{{ pr.pr_number }}: {{ p
 {% if not findings %}Không phát hiện vấn đề đáng kể. 🎉{% endif %}
 
 ---
-_Tạo bởi HermesQA · static tools: semgrep, bandit, gitleaks, hadolint, ruff · LLM: {{ model }}_
+_Tạo bởi HermesQA · static tools: semgrep, bandit, gitleaks, hadolint, ruff, stale · LLM: {{ model }}_
 """)
 
 

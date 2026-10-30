@@ -99,6 +99,28 @@ python tools/learn_rules.py propose --docs python.md,tests.md --profile claudeco
 python tools/learn_rules.py gate --doc python.md --baseline eval/out-v3-rescored --out eval/out-learned --config llm --profile claudecode
 ```
 
+## 4c. Phát hiện khoá hết hạn và code lỗi thời (`app/review/stale.py`)
+Bộ quét thuần Python, chạy trong mọi đường (worker, `app.cli`, eval, trang web kể cả `--skip-static`), không cần Docker hay LLM.
+Finding mang nguồn `stale`, tiêu đề `<MÃ>: ...` nên đi qua dedupe / confidence gate / 👎-calibrate như các static tool khác.
+- **Khoá, chứng chỉ hết hạn** (quét CẢ file thay đổi, bỏ qua file test vì fixture hết hạn thường cố ý): token JWT hard-code có
+  `exp` đã qua hoặc sắp qua (`KEY-JWT`), chứng chỉ PEM quá `notAfter` (`KEY-CERT`, cần `cryptography`), dòng ghi hạn dùng của
+  key/token/secret (`expires 2026-03-01`, `valid_until`, unix timestamp) đã qua (`KEY-DATE`).
+- **Code lỗi thời / không tối ưu** (chỉ dòng `+` của diff, hoặc cả file với `STALE_SCOPE=file`): runtime, image base, runner
+  CI, framework đã hết hạn hỗ trợ theo **bảng ngày EOL** (`EOL-IMAGE`, `EOL-RUNTIME`, `EOL-RUNNER` — so với ngày chạy, nên
+  không phải sửa code khi thời gian trôi); action/lệnh workflow GitHub đã bỏ (`CI-*`); thư viện bị bỏ rơi trong
+  requirements/package.json/go.mod/pom (`DEP-ABANDONED`); API deprecated hoặc đã xoá theo ngôn ngữ (`PY-*`, `PY2-*`, `JS-*`,
+  `GO-*`, `JAVA-*`, `DOCKER-*`); vài mẫu không tối ưu nhận ra chắc bằng mẫu (`sorted(...)[0]`, `+=` chuỗi trong vòng lặp,
+  `time.sleep`/`requests` trong `async def`); so sánh với mốc thời gian đã qua làm một nhánh thành code chết (`DATE-PAST`).
+- Phần cần hiểu ngữ cảnh (API deprecated ngoài bảng, cách viết không tối ưu ở hot path) nằm trong checklist "Lỗi thời" của
+  từng loại file (`app/skills/rules/`) và mục 7 của vai SE — LLM được dặn không lặp lại thứ `stale` đã báo.
+```bash
+python -m app.cli --repo ../my-project --base main --head feature-x --skip-static --roles ""   # chỉ quét stale, không LLM
+python -m app.cli ... --stale-scope file     # code lỗi thời trên cả file thay đổi (rà soát codebase)
+python -m app.cli ... --no-stale             # tắt (ablation cho eval)
+```
+Cấu hình: `STALE_ENABLED`, `STALE_WARN_DAYS` (mặc định 30), `STALE_SCOPE` (`diff`|`file`). Bảng EOL và danh sách thư viện
+bỏ rơi nằm ngay đầu `app/review/stale.py`; thêm phiên bản mới = thêm một dòng ngày.
+
 ## 5. Test
 ```bash
 pip install pytest && pytest -q

@@ -9,7 +9,7 @@ from app import feedback
 from app.config import settings
 from app.github_app import GitHubClient
 from app.memory import init_db, save_run, memory_for_batch, get_posted, save_posted, feedback_profile
-from app.review import calibrate, postprocess, reflect, report, static_tools
+from app.review import calibrate, postprocess, reflect, report, stale, static_tools
 from app.review.agent import get_backend
 from app.review.diff_utils import parse_diff
 from app.review.pipeline import attach_code_to_static, run_llm_review, scope_static_to_diff
@@ -79,6 +79,15 @@ def review_pull_request(job: dict):
         for name, st in tools.items():
             if st["state"] == "failed":
                 log.error("cong cu static THAT BAI: %s (ket qua thieu phan cua no)", name)
+        # 3a. Khoá/chứng chỉ hết hạn + code lỗi thời (app.review.stale): thuần Python, lỗi ở đây không làm hỏng review
+        if settings.stale_enabled:
+            try:
+                stale_f = stale.scan(files, repo_dir)
+                static += stale_f
+                tools["stale"] = {"state": "ok", "findings": len(stale_f)}
+            except Exception as e:
+                log.warning("stale scan failed: %s", e)
+                tools["stale"] = {"state": "failed", "findings": 0}
         attach_code_to_static(static, files)
 
         # 3b. Học từ 👍/👎 người đã bấm lên comment của lần chạy trước (GitHub không có webhook cho

@@ -40,6 +40,8 @@ def main():
     ap.add_argument("--json", help="ghi findings ra JSON (cho eval)")
     ap.add_argument("--meta", help="ghi thông tin phụ ra JSON: file bị bỏ qua, finding bị loại, thống kê ghim")
     ap.add_argument("--skip-static", action="store_true")
+    ap.add_argument("--no-stale", action="store_true", help="không quét khoá hết hạn / code lỗi thời (app.review.stale)")
+    ap.add_argument("--stale-scope", choices=["diff", "file"], help="code lỗi thời: chỉ dòng '+' (diff, mặc định) hay cả file thay đổi")
     ap.add_argument("--verify", choices=["factcheck", "legacy", "off"],
                     help="bước kiểm chứng sau khi LLM sinh finding (mặc định: VERIFY_MODE trong cấu hình)")
     ap.add_argument("--no-verify", action="store_true", help="tương đương --verify off")
@@ -87,6 +89,17 @@ def main():
         for name, st in tools.items():
             if st["state"] == "failed":
                 log.error("cong cu static THAT BAI: %s (ket qua thieu phan cua no)", name)
+    if settings.stale_enabled and not a.no_stale:
+        # Khoá hết hạn / code lỗi thời: thuần Python, chạy cả khi --skip-static (trang web demo không có Docker)
+        from app.review import stale
+        step("stale", "tìm khoá hết hạn và code lỗi thời")
+        try:
+            stale_f = stale.scan(files, a.repo, scope=a.stale_scope)
+            static += stale_f
+            tools = {**(tools or {}), "stale": {"state": "ok", "findings": len(stale_f)}}
+        except Exception as e:   # như worker: lỗi ở bước phụ này không làm đổ cả review, nhưng report phải nói rõ
+            log.exception("stale scan THAT BAI: %s", e)
+            tools = {**(tools or {}), "stale": {"state": "failed", "findings": 0}}
     attach_code_to_static(static, files)
     if not a.skip_static:
         step("static:done", f"{len(static)} finding")

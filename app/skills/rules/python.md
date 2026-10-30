@@ -11,6 +11,11 @@
 - Tài nguyên mở mà không `with` trên đường đi MỚI do diff thêm vào.
 - Hiệu năng rõ ràng: nối chuỗi `+=` trong vòng lặp, tra `in list` lặp lại, biên dịch regex trong vòng lặp.
 - `print()` dùng làm logging trong code chạy thật; logic trùng lặp với hàm đã có trong cùng file (mức thấp).
+- Lỗi thời: API deprecated/đã xoá ở dòng MỚI mà bộ quét `stale` chưa báo (vd `asyncio.get_event_loop()` ngoài coroutine,
+  `typing.List/Dict` khi repo đã dùng cú pháp 3.9+, `os.popen`, `%`-format trong code mới khi repo dùng f-string);
+  thư viện kéo vào đã ngừng bảo trì mà bạn BIẾT CHẮC. Ghi rõ phiên bản bị xoá/deprecated trong explanation.
+- Không tối ưu rõ ràng: `for i in range(len(xs))` chỉ để lấy `xs[i]`; `list(...)` thừa trước `len`/`in`; `.keys()` khi
+  duyệt dict; đọc cả file vào bộ nhớ khi chỉ cần duyệt dòng; `df.iterrows()` trên DataFrame lớn.
 
 **Không báo:**
 - Thiếu đóng kết nối/đóng file ở code CŨ không nằm trong các dòng `+`.

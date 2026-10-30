@@ -5,6 +5,8 @@
 - `apt-get install` thiếu `-y`, thiếu `update` cùng layer, không dọn `/var/lib/apt/lists`; `pip install` thiếu `--no-cache-dir`.
 - `sudo` trong `RUN`; bí mật truyền qua `ARG`/`ENV`; `CMD`/`ENTRYPOINT` dạng shell làm tiến trình không nhận SIGTERM.
 - compose: cổng nội bộ mở ra `0.0.0.0`, `privileged: true`, mount socket Docker không cần thiết.
+- Image base / runtime ở dòng diff sửa đã hết hạn hỗ trợ mà bộ quét `stale` chưa báo (image không có trong bảng EOL của nó);
+  cú pháp lỗi thời (`MAINTAINER`, `apt-key`, `ENV a b` dạng cũ).
 
 **Không báo:**
 - Thiếu `HEALTHCHECK`, thiếu multi-stage, thứ tự layer, ghim digest — khi diff KHÔNG đụng tới phần đó.

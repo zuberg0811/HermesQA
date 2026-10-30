@@ -74,6 +74,12 @@ class Settings(BaseSettings):
     # Agent tự rút ghi chú về repo sau mỗi lần review (app.review.reflect): thêm 1 lần gọi LLM/PR.
     agent_memory_enabled: bool = True
     agent_memory_max_notes: int = 30      # trần ghi chú nguồn agent mỗi repo; ghi chú từ người không bị cắt
+    # Phát hiện khoá/chứng chỉ hết hạn và code lỗi thời (app.review.stale): thuần Python, không cần Docker.
+    #   stale_warn_days: khoá/chứng chỉ còn <= N ngày thì báo "sắp hết hạn"
+    #   stale_scope: diff = code lỗi thời chỉ ở dòng '+' (mặc định) | file = cả file thay đổi
+    stale_enabled: bool = True
+    stale_warn_days: int = 30
+    stale_scope: str = "diff"
 
     @model_validator(mode="after")
     def _apply_llm_profile(self):
