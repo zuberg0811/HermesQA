@@ -146,3 +146,13 @@ def test_moi_finding_deu_tro_vao_file_da_quet(scan):
     for f in findings:
         assert not f.file.startswith("/"), f"duong dan tuyet doi ro ri: {f.file}"
         assert f.line >= 1
+
+
+def test_semgrep_tren_dockerfile_khong_con_nhan_bug(scan):
+    """Eval 15/10: luat semgrep cho Dockerfile mang nhan 'bug' nen cum gop mat nhan 'devops' -> mat TP.
+    Di qua semgrep THAT (luat tu semgrep-rules trong image) de chac _semgrep_category doc dung metadata."""
+    findings, _ = scan
+    on_dockerfile = [f for f in findings if f.source == "semgrep" and f.file == "Dockerfile"]
+    assert on_dockerfile, "semgrep khong bao gi tren Dockerfile (FROM latest, USER root, apt khong clean)"
+    for f in on_dockerfile:
+        assert f.category in ("devops", "security"), f"{f.title}: category {f.category!r}"
