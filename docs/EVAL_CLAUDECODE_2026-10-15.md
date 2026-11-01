@@ -204,3 +204,32 @@ prompt. Giá trị của bước này chỉ đo được trên PR thật (`eval/
 
 Thư mục: `eval/out-claudecode-v2/` (`static`, `both`), `eval/out-multi-claudecode-v2/` (`both`). CI: từ 02/11 bộ test
 chạy tự động trên GitHub Actions (`.github/workflows/test.yml`), lần đầu xanh.
+
+## 7. PR thật (AACR-Bench, 15 PR Python) với Claude — 02/11/2026
+
+Cùng bộ 15 PR và 68 vấn đề chuẩn như `eval/aacr/out/` (Gemini). Model review và giám khảo đều là `claude-opus-5-5`
+(3 phiếu/vấn đề), nên con số này **chưa** có giám khảo khác họ (việc D14). Chạy từ 01:53 đến 03:51 (~2 giờ cho 2 cấu hình).
+
+| Model | Config | Finding | TP chặt | P | R | F1 | TP lỏng | F1 lỏng |
+|---|---|---|---|---|---|---|---|---|
+| Gemini 3.5 flash-lite | llm | 8 | 1 | 12,5% | 1,5% | 2,6% | 1 | 2,6% |
+| Gemini 3.5 flash-lite | both | 286 | 2 | 0,7% | 2,9% | 1,1% | 2 | 1,1% |
+| **Claude Opus 5.5** | llm | 42 | 14 | 33,3% | 20,6% | **25,5%** | 17 | 30,9% |
+| **Claude Opus 5.5** | both | 62 | 15 | 24,2% | 22,1% | 23,1% | 18 | 27,7% |
+
+Theo mức ngữ cảnh (Claude `llm`, chặt): Diff Level 1/21, File Level 8/29, Repo Level 5/18. Với `both`: 1/21, 9/29, 5/18.
+
+Nhận xét:
+- Khoảng cách model trên PR thật lớn hơn nhiều so với bộ lỗi tiêm (mục 1: Claude và Gemini chỉ cách nhau vài điểm).
+  Trên PR thật Gemini gần như không bắt được gì (1 đến 2 TP), Claude bắt 14 đến 15. Bộ lỗi tiêm vì thế không đủ để
+  phân biệt model; PR thật mới lộ ra.
+- Static tools gần như không giúp trên PR thật: `both` thêm 20 finding nhưng chỉ thêm 1 TP, F1 giảm 2,4 điểm so với `llm`.
+  Ngược với bộ lỗi tiêm (nơi `both` cao hơn `static`/`llm` rõ). Lý do: vấn đề chuẩn của AACR chủ yếu là lỗi logic cần
+  ngữ cảnh file/repo (47/68), loại semgrep/bandit/ruff không bắt.
+- Điểm yếu còn lại: Diff Level chỉ bắt 1/21 ở cả hai cấu hình, dù đây là nhóm "chỉ cần nhìn diff". Cần xem từng case
+  trong `eval/aacr/out-claudecode/judge/` để biết là bỏ sót hay giám khảo không khớp mô tả.
+- Giám khảo cùng model với bên review có thể thiên vị; trước khi đưa vào báo cáo chính cần chấm lại với giám khảo khác
+  họ (D14), hoặc ít nhất lấy mẫu 10 TP đọc tay.
+
+Thư mục: `eval/aacr/out-claudecode/` (gitignore; `results.md`, `judge/`, `runs/`). Lệnh:
+`LLM_PROFILE=claudecode python eval/aacr_eval.py --steps run,score --configs llm,both --out out-claudecode`.
