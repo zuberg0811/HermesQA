@@ -175,3 +175,32 @@ Chấm lại bằng `eval/rescore.py` (áp lại hậu xử lý mới lên findi
 Thư mục: `eval/out-claudecode-custom-relabel/`, `eval/out-v3-relabel/` (bị gitignore như mọi `eval/out-*`; tạo lại
 bằng `python eval/rescore.py --src <cũ> --dst <mới>` rồi `python eval/score.py --out <mới>`). Test:
 `tests/test_category_labels.py`.
+
+## 6. Chạy lại thật 30/10 → 02/11/2026 với hai sửa ở mục 5 (Claude, cùng cấu hình mục 1)
+
+Cùng server `claude-server/` chế độ `custom`, `claude-opus-5-5`, Docker bật cho static. Cấu hình `llm` không chạy
+lại vì không có semgrep và dedupe LLM–LLM chỉ gộp khi cùng nhãn, nên hai sửa không đụng tới nó. Lần chạy bị ngắt
+hai lần vì máy ngủ / phiên đóng; `run_eval.py` chạy tiếp từ case dở, hai case có thời gian ảo (`docker-sudo` 29 giờ,
+`react-missing-key` 8,8 giờ) được chạy lại riêng bằng `--cases` nên cột thời gian là số thật.
+
+| Bộ · cấu hình | 15/10 (nhãn cũ) | 30/10 chấm lại offline | **02/11 chạy thật** | Ghi chú |
+|---|---|---|---|---|
+| Python · `static` | 67,7 | 74,2 | **76,2** (P 88,9 · R 66,7) | thêm 1 TP so với offline |
+| Python · `both` | 80,5 | 85,4 | **86,4** (P 77,8 · R 97,2) | FP 13 → 10, FN 3 → 1; 149 s/PR, 15,3k token/PR |
+| Python · `llm` | 79,5 | – | không chạy lại | |
+| Đa ngôn ngữ · `both` | 69,6 | – | **85,7** (P 75,0 · R 100) | TP 16 → 18, FP 12 → 6, FN 2 → 0; 118 s/PR |
+| Đa ngôn ngữ · `llm` | 74,4 | – | không chạy lại | |
+
+Đọc số đa ngôn ngữ cho đúng: hai FN của 15/10 chính là "2 case lệch nhãn" đã ghi ở mục 2 (LLM thấy lỗi nhưng chọn
+category khác người soạn) — nay nhãn phụ `categories` cứu được, và một FP cũ đồng thời thành TP. Phần FP giảm thêm
+(12 → 6) không tách riêng được giữa sửa nhãn semgrep và dao động giữa hai lần gọi LLM (model không lặp lại y hệt);
+muốn tách phải chạy nhiều lần lấy trung bình. Với bộ Python, chạy thật cao hơn chấm lại offline 1 điểm ở cả hai cấu
+hình, cùng chiều, nên hai sửa coi như đã được xác nhận bằng lần chạy thật.
+
+**Fact-check (điểm mở ở mục 3) — so Claude với Gemini trên `_meta`:** Claude `llm` 0/58 lần kiểm chứng loại finding,
+`both` 0/40; Gemini (`eval/out-v3`) `llm` 0/59, `both` 1/59. Tức là bước fact-check gần như không loại gì ở **cả hai
+model** trên bộ lỗi tiêm: nguyên nhân là bộ đề (mỗi lỗi có bằng chứng rõ ngay trong diff), không phải model hay
+prompt. Giá trị của bước này chỉ đo được trên PR thật (`eval/aacr/`), nơi LLM hay "nhìn thấy" lỗi không có trong diff.
+
+Thư mục: `eval/out-claudecode-v2/` (`static`, `both`), `eval/out-multi-claudecode-v2/` (`both`). CI: từ 02/11 bộ test
+chạy tự động trên GitHub Actions (`.github/workflows/test.yml`), lần đầu xanh.
