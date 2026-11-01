@@ -1,0 +1,29 @@
+# Chạy bộ test khi push / mở PR. Không có Docker daemon trên runner mặc định nên nhóm test sandbox
+# (tests/test_sandbox_integration.py) tự bỏ qua; mọi thứ khác (pipeline, dedupe, stale, web, feedback...) chạy đủ.
+# Biến môi trường tối thiểu do tests/conftest.py đặt (GITHUB_APP_ID, GITHUB_WEBHOOK_SECRET, SQLite in-memory).
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"          # cùng phiên bản với Dockerfile và runner/Dockerfile
+          cache: pip
+
+      - name: Cài phụ thuộc
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pytest
+
+      - name: Chạy test
+        run: python -m pytest -q -p no:cacheprovider
