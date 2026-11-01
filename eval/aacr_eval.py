@@ -34,6 +34,7 @@ os.environ.setdefault("GITHUB_WEBHOOK_SECRET", "x")
 
 DATASET_URL = "https://huggingface.co/datasets/Alibaba-Aone/aacr-bench/resolve/main/dataset.json"
 WORK = os.path.join(ROOT, "eval", "aacr")
+OUT_NAME = "out"   # thư mục kết quả dưới WORK; --out để chạy model khác (vd. Claude) mà không đè kết quả cũ
 CONFIG_FLAGS = {"llm": ["--skip-static"], "both": [], "llm_noverify": ["--skip-static", "--no-verify"]}
 TOKEN_RE = re.compile(r"tokens in=(\d+) out=(\d+)")
 LINE_SLACK = 3
@@ -123,7 +124,7 @@ def prepare(pr: dict) -> str:
 
 
 def run_config(pr: dict, config: str, diff_path: str) -> dict:
-    out_dir = os.path.join(WORK, "out", config)
+    out_dir = os.path.join(WORK, OUT_NAME, config)
     os.makedirs(out_dir, exist_ok=True)
     out_json = os.path.join(out_dir, pr["id"] + ".json")
     cmd = [sys.executable, "-m", "app.cli", "--repo", repo_dir(pr), "--diff-file", diff_path,
@@ -179,7 +180,7 @@ def judge_match(backend, t: dict, cands: list[tuple[int, dict]], votes: int) -> 
 def score_config(prs, config: str, votes: int) -> dict:
     from app.review.agent import get_backend
     backend = get_backend()
-    out_dir = os.path.join(WORK, "out", config)
+    out_dir = os.path.join(WORK, OUT_NAME, config)
     cache_path = os.path.join(out_dir, "_judge_cache.json")
     cache = json.load(open(cache_path, encoding="utf-8")) if os.path.exists(cache_path) else {}
     tot = Counter()
@@ -231,7 +232,10 @@ def main():
     ap.add_argument("--lang", default="Python")
     ap.add_argument("--max-lines", type=int, default=210)
     ap.add_argument("--votes", type=int, default=3)
+    ap.add_argument("--out", default="out", help="thư mục kết quả dưới eval/aacr/ (vd. out-claudecode); kèm LLM_PROFILE=<tên> để đổi model")
     a = ap.parse_args()
+    global OUT_NAME
+    OUT_NAME = a.out
     steps = a.steps.split(",")
     configs = [c for c in a.configs.split(",") if c]
     prs = load_prs(a.lang, a.max_lines)
@@ -249,7 +253,7 @@ def main():
 
     if "run" in steps:
         for cfg in configs:
-            runs_path = os.path.join(WORK, "out", f"runs_{cfg}.json")
+            runs_path = os.path.join(WORK, OUT_NAME, f"runs_{cfg}.json")
             os.makedirs(os.path.dirname(runs_path), exist_ok=True)
             runs = {r["case"]: r for r in (json.load(open(runs_path, encoding="utf-8")) if os.path.exists(runs_path) else [])}
             for pr in prs.values():
@@ -287,7 +291,7 @@ def main():
                 detail.append(f"| {ctx} | {bc[(ctx, 'total')]} | {bc[(ctx, 'strict')]} | {bc[(ctx, 'loose')]} |")
             detail += ["", "| PR | Dòng đổi | Vấn đề chuẩn | Finding | TP chặt | TP lỏng |", "|---|---|---|---|---|---|"]
             detail += [f"| {r[0]} | {r[1]} | {r[2]} | {r[3]} | {r[4]} | {r[5]} |" for r in res["rows"]]
-        out_md = os.path.join(WORK, "out", "results.md")
+        out_md = os.path.join(WORK, OUT_NAME, "results.md")
         with open(out_md, "w", encoding="utf-8") as f:
             f.write("\n".join(lines + detail) + "\n")
         print("\n".join(lines + detail))
