@@ -227,9 +227,9 @@ Nhận xét:
   Ngược với bộ lỗi tiêm (nơi `both` cao hơn `static`/`llm` rõ). Lý do: vấn đề chuẩn của AACR chủ yếu là lỗi logic cần
   ngữ cảnh file/repo (47/68), loại semgrep/bandit/ruff không bắt.
 - Điểm yếu còn lại: Diff Level chỉ bắt 1/21 ở cả hai cấu hình, dù đây là nhóm "chỉ cần nhìn diff". Cần xem từng case
-  trong `eval/aacr/out-claudecode/judge/` để biết là bỏ sót hay giám khảo không khớp mô tả.
+  trong `eval/aacr/out-claudecode/llm/` và `both/` để biết là bỏ sót hay giám khảo không khớp mô tả.
 - Giám khảo cùng model với bên review có thể thiên vị; trước khi đưa vào báo cáo chính cần chấm lại với giám khảo khác
   họ (D14), hoặc ít nhất lấy mẫu 10 TP đọc tay.
 
-Thư mục: `eval/aacr/out-claudecode/` (gitignore; `results.md`, `judge/`, `runs/`). Lệnh:
+Thư mục: `eval/aacr/out-claudecode/` (gitignore; `results.md`, `runs_llm.json`, `runs_both.json`, thư mục `llm/`, `both/` chứa phán quyết giám khảo). Lệnh:
 `LLM_PROFILE=claudecode python eval/aacr_eval.py --steps run,score --configs llm,both --out out-claudecode`.
