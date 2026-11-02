@@ -165,14 +165,17 @@ def judge_match(backend, t: dict, cands: list[tuple[int, dict]], votes: int) -> 
               .replace("<<NOTE>>", t["note"][:1500]).replace("<<CANDIDATES>>", listing))
     ballots = []
     for _ in range(votes):
-        try:
-            d = backend.run_json("SE", prompt, system=SAME_SYSTEM)
-            m = d.get("match", -1)
-            ballots.append(m if isinstance(m, int) and not isinstance(m, bool) and 0 <= m < len(cands) else -1)
-        except Exception as e:
-            print(f"    phiếu lỗi: {e}", flush=True)
-    if not ballots:
-        return -1
+        for attempt in range(6):      # API quá tải (503/429): chờ rồi gọi lại, không để phiếu rỗng thành "không khớp"
+            try:
+                d = backend.run_json("SE", prompt, system=SAME_SYSTEM)
+                m = d.get("match", -1)
+                ballots.append(m if isinstance(m, int) and not isinstance(m, bool) and 0 <= m < len(cands) else -1)
+                break
+            except Exception as e:
+                print(f"    phiếu lỗi (lần {attempt + 1}): {str(e)[:160]}", flush=True)
+                time.sleep(5 * (attempt + 1))
+    if len(ballots) * 2 <= votes:
+        raise RuntimeError(f"chỉ có {len(ballots)}/{votes} phiếu hợp lệ; không ghi cache")
     winner, n = Counter(ballots).most_common(1)[0]
     return cands[winner][0] if winner >= 0 and n * 2 > len(ballots) else -1
 
