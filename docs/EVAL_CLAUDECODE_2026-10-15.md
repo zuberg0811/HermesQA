@@ -233,3 +233,51 @@ Nhận xét:
 
 Thư mục: `eval/aacr/out-claudecode/` (gitignore; `results.md`, `runs_llm.json`, `runs_both.json`, thư mục `llm/`, `both/` chứa phán quyết giám khảo). Lệnh:
 `LLM_PROFILE=claudecode python eval/aacr_eval.py --steps run,score --configs llm,both --out out-claudecode`.
+
+### 7.1 Giám khảo khác họ (D14) — 02/11/2026
+
+Chấm lại nguyên các finding đã sinh, chỉ đổi giám khảo (`eval/aacr_eval.py --steps score --judge-tag <tên> --review-model <model>`;
+cache và results mang hậu tố riêng). Mỗi chiều 3 phiếu/vấn đề.
+
+| Finding của | Giám khảo | Config | TP chặt | P | R | F1 | TP lỏng |
+|---|---|---|---|---|---|---|---|
+| Claude Opus 5.5 | Claude (tự chấm, mục 7) | llm | 14 | 33,3% | 20,6% | 25,5% | 17 |
+| Claude Opus 5.5 | **Gemini 3.1 flash-lite** | llm | 15 | 35,7% | 22,1% | 27,3% | 16 |
+| Claude Opus 5.5 | Claude (tự chấm) | both | 15 | 24,2% | 22,1% | 23,1% | 18 |
+| Claude Opus 5.5 | **Gemini 3.1 flash-lite** | both | 16 | 25,8% | 23,5% | 24,6% | 18 |
+| Gemini flash-lite | Gemini (tự chấm, `eval/aacr/out`) | llm | 1 | 12,5% | 1,5% | 2,6% | 1 |
+| Gemini flash-lite | **Claude Opus 5.5** | llm | 1 | 12,5% | 1,5% | 2,6% | 1 |
+| Gemini flash-lite | Gemini (tự chấm) | both | 2 | 0,7% | 2,9% | 1,1% | 2 |
+| Gemini flash-lite | **Claude Opus 5.5** | both | 3 | 1,0% | 4,4% | 1,7% | 3 |
+
+Kết luận: đổi giám khảo làm số TP lệch tối đa 1 ở mọi ô, cùng chiều cho cả hai model. Không có dấu hiệu giám khảo cùng
+họ "thiên vị" bên sinh: Gemini chấm Claude còn cao hơn Claude tự chấm 1 TP, Claude chấm Gemini cao hơn Gemini tự chấm 1 TP.
+Vì vậy khoảng cách Claude ≈ 25 F1 so với Gemini ≈ 2 F1 trên PR thật là thật, không phải do cách chấm. Ghi chú vận hành:
+Gemini trả 503 quá tải nhiều lần trong ngày; scorer đã thêm gọi lại (tối đa 6 lần, chờ tăng dần) và không ghi cache
+khi thiếu quá nửa số phiếu (commit `0eedc6a`), nếu không một phiếu lỗi sẽ bị tính thành "không khớp" vĩnh viễn trong cache.
+
+Kết quả: `eval/aacr/out-claudecode/results_judge_gemini.md`, `eval/aacr/out/results_judge_claude.md`.
+
+### 7.2 Đọc tay 21 vấn đề Diff Level (D15)
+
+Nhóm Diff Level là nhóm "chỉ cần nhìn diff" nhưng Claude chỉ bắt 1/21 (2/21 theo Gemini chấm). Đọc từng vấn đề chuẩn
+(`eval/aacr/dataset.json`, tập con 15 PR) và các finding cùng file của cấu hình `llm`:
+
+| Loại vấn đề chuẩn | Số | Bot bắt | Ví dụ |
+|---|---|---|---|
+| Văn phong / tài liệu / đặt tên (không phải lỗi) | 14 | 0 | lỗi chính tả trong comment, hai dấu cách trước `noqa`, gợi ý walrus `:=`, `not x == 0` → `x != 0`, thụt lề 8 thay vì 4, dùng `cls` thay tên class, đặt tên hằng cho số 16384 |
+| Lỗi logic thật | 7 | 1 | **bắt:** xoá cạnh tuần tự thay vì song song (ragflow 6691). **sót:** dấu phẩy thừa trong `.format(i,)` (ComfyUI 6033); hai chỗ `d["key"]` thiếu `.get` (ragflow 6691, langflow 5388); chuỗi filter bắt đầu bằng `" AND"` khi rỗng (ragflow 7151); `@lru_cache` nhận cả `*args` làm hỏng "log once" và tăng bộ nhớ (vllm 17425, 2 vấn đề) |
+
+14 vấn đề nhóm đầu HermesQA **cố ý không đăng** (ngưỡng `min_severity_to_comment=medium`, checklist loại góp ý văn phong),
+nên recall thấp ở Diff Level phần lớn là lựa chọn thiết kế, không phải bỏ sót. 6 lỗi logic sót mới là điểm yếu thật:
+đều là lỗi "nhìn kỹ một dòng" (dấu phẩy, `.get`, chuỗi rỗng, cache key) trong khi finding Claude đưa ra ở cùng file
+lại là lỗi luồng xử lý lớn hơn. Hướng cải thiện: thêm mục "đọc từng dòng đổi: đối số thừa, truy cập dict không
+`.get`, chuỗi nối với điều kiện rỗng, cache key" vào checklist `python.md`, rồi đo lại bằng cổng eval ở lớp 4.
+
+### 7.3 Lớp 4 chạy thật lần đầu (C9) — 02/11/2026
+
+Sau thử nghiệm phản hồi trên PR #1 (`docs/THU_NGHIEM_PHAN_HOI_2026-11-02.md`), bảng `feedback` có 6 dòng thật.
+Chạy `tools/learn_rules.py propose --docs python.md --profile claudecode`: Claude nhận 5 bằng chứng (4 reject, 1 accept,
+đều trên `examples/c8_demo*.py`) và **không đề xuất dòng nào** cho checklist. Đây là kết quả đúng: bằng chứng chỉ nói
+"thư mục examples/ là demo cố ý", không rút được luật chung cho mọi repo; đề xuất luật từ 5 phản hồi trên một thư mục
+demo sẽ là học thuộc đề. Bước gate (C10) vì thế chưa có ứng viên để chạy; cần phản hồi từ PR thật đa dạng hơn.
