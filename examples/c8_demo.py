@@ -37,3 +37,15 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+def load_overrides(path: str) -> dict:
+    """Cùng mẫu với load_config: open() không encoding (đã được dạy là không phải lỗi) và bare except (đã bị 👎 một lần)."""
+    data = {}
+    try:
+        for line in open(path):
+            key, value = line.split("=")
+            data[key.strip()] = value.strip()
+    except:
+        pass
+    return data
