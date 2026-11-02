@@ -10,7 +10,7 @@ Ba bảng:
 """
 import logging
 from datetime import datetime
-from sqlalchemy import create_engine, inspect, text, Column, Integer, String, Text, DateTime, JSON, UniqueConstraint
+from sqlalchemy import create_engine, inspect, text, Column, Integer, BigInteger, String, Text, DateTime, JSON, UniqueConstraint
 from sqlalchemy.orm import declarative_base, sessionmaker
 
 from app.config import settings
@@ -54,7 +54,8 @@ class PostedComment(Base):
     pr_number = Column(Integer, index=True)
     fingerprint = Column(String, index=True)
     head_sha = Column(String)
-    comment_id = Column(Integer, index=True, nullable=True)   # id review comment trên GitHub, điền sau khi đăng
+    # id review comment trên GitHub đã vượt 2^31 (vd. 4444869769) nên phải BIGINT; INTEGER của Postgres bị tràn
+    comment_id = Column(BigInteger, index=True, nullable=True)   # điền sau khi đăng
     file = Column(String, default="")
     category = Column(String, default="")
     title = Column(String, default="")
@@ -73,7 +74,7 @@ class Feedback(Base):
     repo = Column(String, index=True)
     pr_number = Column(Integer)
     fingerprint = Column(String, index=True)
-    comment_id = Column(Integer, index=True)
+    comment_id = Column(BigInteger, index=True)
     kind = Column(String)               # reject | accept
     channel = Column(String)            # reply | reaction
     author = Column(String, default="")
@@ -85,14 +86,18 @@ def _add_missing_columns():
     """create_all không thêm cột vào bảng đã có. Với DB cũ (trước khi có feedback) bổ sung cột thiếu."""
     insp = inspect(engine)
     with engine.begin() as conn:
-        for table in (PostedComment, RepoMemory):
+        for table in (PostedComment, RepoMemory, Feedback):
             if not insp.has_table(table.__tablename__):
                 continue
-            have = {c["name"] for c in insp.get_columns(table.__tablename__)}
+            existing = {c["name"]: c for c in insp.get_columns(table.__tablename__)}
             for col in table.__table__.columns:
-                if col.name in have:
+                if col.name not in existing:
+                    ddl = f"ALTER TABLE {table.__tablename__} ADD COLUMN {col.name} {col.type.compile(engine.dialect)}"
+                elif isinstance(col.type, BigInteger) and engine.dialect.name == "postgresql"                         and str(existing[col.name]["type"]).upper() == "INTEGER":
+                    # DB tạo trước khi comment_id đổi sang BIGINT (SQLite không cần: INTEGER đã là 64-bit)
+                    ddl = f"ALTER TABLE {table.__tablename__} ALTER COLUMN {col.name} TYPE BIGINT"
+                else:
                     continue
-                ddl = f"ALTER TABLE {table.__tablename__} ADD COLUMN {col.name} {col.type.compile(engine.dialect)}"
                 log.info("migrate: %s", ddl)
                 conn.execute(text(ddl))
 

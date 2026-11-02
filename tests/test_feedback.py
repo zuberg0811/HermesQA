@@ -255,3 +255,12 @@ def test_init_db_adds_missing_columns_to_old_table():
     cols = {c["name"] for c in inspect(memory.engine).get_columns("posted_comments")}
     assert {"comment_id", "file", "category", "title"} <= cols
     memory.save_posted("o/r", 1, "s", [_f()])                                       # ghi được vào bảng đã nâng cấp
+
+
+def test_comment_id_la_bigint():
+    """Id review comment trên GitHub đã vượt 2^31 (PR #1 ngày 02/11: 4444869769); cột INTEGER của Postgres bị tràn
+    làm link_comment_ids và save_feedback thất bại, tức là vòng phản hồi đứt dù review vẫn đăng."""
+    from sqlalchemy import BigInteger
+    from app import memory
+    assert isinstance(memory.PostedComment.__table__.c.comment_id.type, BigInteger)
+    assert isinstance(memory.Feedback.__table__.c.comment_id.type, BigInteger)
