@@ -54,7 +54,7 @@ python -m app.cli --repo ../my-project --base main --head feature-x --out report
 1. Tạo GitHub App: **Settings → Developer settings → GitHub Apps → New**
    - Webhook URL: `https://<your-host>/webhook/github`, secret = `GITHUB_WEBHOOK_SECRET`
    - Permissions: Pull requests **Read & write**, Checks **Read & write**, Contents **Read**, Metadata **Read**
-   - Subscribe events: **Pull request**
+   - Subscribe events: **Pull request** và **Pull request review comment** (event thứ hai để bot học từ reply/👎, xem mục phản hồi bên dưới)
    - Generate private key → lưu vào `secrets/github-app.pem`
 2. Điền `GITHUB_APP_ID`, secret vào `.env`.
 3. Dev local dùng tunnel: `ngrok http 8000` hoặc `smee.io`.

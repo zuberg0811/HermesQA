@@ -177,11 +177,12 @@ def judge_match(backend, t: dict, cands: list[tuple[int, dict]], votes: int) -> 
     return cands[winner][0] if winner >= 0 and n * 2 > len(ballots) else -1
 
 
-def score_config(prs, config: str, votes: int) -> dict:
+def score_config(prs, config: str, votes: int, judge_tag: str = "") -> dict:
     from app.review.agent import get_backend
     backend = get_backend()
     out_dir = os.path.join(WORK, OUT_NAME, config)
-    cache_path = os.path.join(out_dir, "_judge_cache.json")
+    # giám khảo khác (--judge-tag) có cache và results riêng, không đè phán quyết của giám khảo mặc định
+    cache_path = os.path.join(out_dir, f"_judge_cache{('_' + judge_tag) if judge_tag else ''}.json")
     cache = json.load(open(cache_path, encoding="utf-8")) if os.path.exists(cache_path) else {}
     tot = Counter()
     by_ctx = Counter()
@@ -233,6 +234,8 @@ def main():
     ap.add_argument("--max-lines", type=int, default=210)
     ap.add_argument("--votes", type=int, default=3)
     ap.add_argument("--out", default="out", help="thư mục kết quả dưới eval/aacr/ (vd. out-claudecode); kèm LLM_PROFILE=<tên> để đổi model")
+    ap.add_argument("--judge-tag", default="", help="chấm lại bằng giám khảo KHÁC model review (model hiện tại làm giám khảo): cache và results mang hậu tố này")
+    ap.add_argument("--review-model", default="", help="tên model đã sinh finding, chỉ để ghi vào results khi giám khảo là model khác")
     a = ap.parse_args()
     global OUT_NAME
     OUT_NAME = a.out
@@ -270,15 +273,17 @@ def main():
     if "score" in steps:
         from app.config import settings
         model = settings.anthropic_model if settings.agent_backend == "anthropic" else settings.llm_model
+        who = (f"Model review: `{a.review_model or model}`; giám khảo khớp: `{model}` ({a.votes} phiếu/vấn đề). "
+               if a.judge_tag or a.review_model else f"Model review và giám khảo khớp: `{model}` ({a.votes} phiếu/vấn đề). ")
         lines = [f"# HermesQA trên PR thật — AACR-Bench, tập con {a.lang} ({len(prs)} PR <= {a.max_lines} dòng)", "",
-                 f"Model review và giám khảo khớp: `{model}` ({a.votes} phiếu/vấn đề). ",
+                 who,
                  "Chặt = cùng file, dòng trong khoảng ±3, và giám khảo LLM xác nhận cùng vấn đề. "
                  "Lỏng = cùng file và cùng vấn đề (bỏ qua số dòng).", "",
                  "| Config | PR | Vấn đề chuẩn | Finding | TP chặt | P | R | F1 | TP lỏng | P | R | F1 |",
                  "|---|---|---|---|---|---|---|---|---|---|---|---|"]
         detail = []
         for cfg in configs:
-            res = score_config(prs, cfg, a.votes)
+            res = score_config(prs, cfg, a.votes, a.judge_tag)
             t = res["tot"]
             ps, rs, fs = prf(t["strict"], t["findings"], t["truth"])
             pl, rl, fl = prf(t["loose"], t["findings"], t["truth"])
@@ -291,7 +296,7 @@ def main():
                 detail.append(f"| {ctx} | {bc[(ctx, 'total')]} | {bc[(ctx, 'strict')]} | {bc[(ctx, 'loose')]} |")
             detail += ["", "| PR | Dòng đổi | Vấn đề chuẩn | Finding | TP chặt | TP lỏng |", "|---|---|---|---|---|---|"]
             detail += [f"| {r[0]} | {r[1]} | {r[2]} | {r[3]} | {r[4]} | {r[5]} |" for r in res["rows"]]
-        out_md = os.path.join(WORK, OUT_NAME, "results.md")
+        out_md = os.path.join(WORK, OUT_NAME, f"results{('_judge_' + a.judge_tag) if a.judge_tag else ''}.md")
         with open(out_md, "w", encoding="utf-8") as f:
             f.write("\n".join(lines + detail) + "\n")
         print("\n".join(lines + detail))
