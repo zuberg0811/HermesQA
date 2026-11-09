@@ -158,25 +158,71 @@ def select_memory(repo: str, paths: list[str], role: str = "", limit: int = 20, 
     Thứ tự: ghi chú gắn đúng file > cùng thư mục > ghi chú chung của repo > ghi chú về file khác;
     cùng hạng thì ưu tiên ghi chú do người dạy, rồi category hợp vai, rồi mới nhất. Ghi chú về file
     không liên quan chỉ được lấy khi còn chỗ."""
-    rows = list_memory(repo, limit=pool)
+    return rank_memory(list_memory(repo, limit=pool), paths, role, limit)
+
+
+def rank_memory(rows: list[dict], paths: list[str], role: str = "", limit: int = 20) -> list[dict]:
+    """Phần xếp hạng thuần (không chạm DB) của select_memory; `rows` mới nhất trước.
+    Tách riêng để CLI/eval nạp memory từ FILE (--memory-file) dùng đúng cùng một cách chọn với worker."""
     if not rows:
         return []
     want = _ROLE_CATEGORIES.get(role, set())
     scored = []
     for i, r in enumerate(rows):            # i nhỏ = mới hơn
-        ps = _path_score(r["file"], paths)
-        scored.append((ps, 1 if r["source"] == "feedback" else 0, 1 if r["category"] in want else 0, -i, r))
+        ps = _path_score(r.get("file", ""), paths)
+        scored.append((ps, 1 if r.get("source") == "feedback" else 0, 1 if r.get("category") in want else 0, -i, r))
     scored.sort(key=lambda t: t[:4], reverse=True)
     return [t[4] for t in scored[:limit]]
 
 
 def memory_text(rows: list[dict]) -> str:
-    return "\n".join(f"- {'(tự rút ra) ' if r['source'] == 'agent' else ''}{r['note']}" for r in rows)
+    return "\n".join(f"- {'(tự rút ra) ' if r.get('source') == 'agent' else ''}{r['note']}" for r in rows)
 
 
 def memory_for_batch(repo: str, limit: int = 20):
     """Callable truyền vào run_llm_review: mỗi lô file nhận khối memory riêng (xem pipeline)."""
     return lambda paths, role: memory_text(select_memory(repo, paths, role, limit))
+
+
+# ---------- memory từ file (CLI / eval, không cần DB) ----------
+# Dùng để đo A/B "có memory / không memory" trên chuỗi PR của cùng một repo mà không phải dựng Postgres:
+# file JSON là danh sách ghi chú cùng trường với bảng repo_memory, ghi chú CUỐI file là mới nhất.
+
+def load_memory_file(path: str) -> list[dict]:
+    """Đọc ghi chú từ file. JSON: [{"note", "source", "kind", "file", "category"}]; .md/.txt: mỗi dòng một ghi chú
+    (bỏ '- ' đầu dòng), coi là ghi chú chung do người viết. Trả về mới nhất TRƯỚC, như list_memory."""
+    import json
+    import os
+    if not os.path.exists(path):
+        return []
+    raw = open(path, encoding="utf-8").read()
+    if path.lower().endswith(".json"):
+        data = json.loads(raw or "[]")
+        rows = [{"note": str(d.get("note", "")).strip(), "source": d.get("source") or "feedback", "kind": d.get("kind") or "",
+                 "file": d.get("file") or "", "category": d.get("category") or ""} for d in data if isinstance(d, dict)]
+    else:
+        rows = [{"note": l.strip().lstrip("-• ").strip(), "source": "feedback", "kind": "", "file": "", "category": ""}
+                for l in raw.splitlines() if l.strip() and not l.lstrip().startswith("#")]
+    return [r for r in rows if r["note"]][::-1]
+
+
+def memory_from_rows(rows: list[dict], limit: int = 20):
+    """Như memory_for_batch nhưng trên danh sách ghi chú có sẵn (từ load_memory_file)."""
+    return lambda paths, role: memory_text(rank_memory(rows, paths, role, limit))
+
+
+def append_memory_file(path: str, notes: list[dict], source: str = "agent") -> int:
+    """Nối ghi chú mới (đầu ra của reflect) vào file JSON; tạo file nếu chưa có. Trả số ghi chú đã thêm."""
+    import json
+    import os
+    data = json.loads(open(path, encoding="utf-8").read() or "[]") if os.path.exists(path) else []
+    for n in notes:
+        data.append({"note": n["note"], "source": source, "kind": n.get("kind", ""), "file": n.get("file", ""),
+                     "category": n.get("category", "")})
+    os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=1)
+    return len(notes)
 
 
 def prune_agent_notes(repo: str, keep: int = 30) -> int:

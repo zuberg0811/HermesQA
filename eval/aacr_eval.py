@@ -123,13 +123,18 @@ def prepare(pr: dict) -> str:
     return diff_path
 
 
-def run_config(pr: dict, config: str, diff_path: str) -> dict:
+def memory_chain_file(pr: dict) -> str:
+    """File memory dùng chung cho mọi PR của một repo khi chạy --memory-chain (lớp 2+3 tự học, không cần DB)."""
+    return os.path.join(WORK, OUT_NAME, "memory", f"{pr['owner']}_{pr['repo']}.json")
+
+
+def run_config(pr: dict, config: str, diff_path: str, extra: list[str] | None = None) -> dict:
     out_dir = os.path.join(WORK, OUT_NAME, config)
     os.makedirs(out_dir, exist_ok=True)
     out_json = os.path.join(out_dir, pr["id"] + ".json")
     cmd = [sys.executable, "-m", "app.cli", "--repo", repo_dir(pr), "--diff-file", diff_path,
            "--out", os.path.join(out_dir, pr["id"] + ".md"), "--json", out_json,
-           "--meta", os.path.join(out_dir, "_meta", pr["id"] + ".json"), *CONFIG_FLAGS[config]]
+           "--meta", os.path.join(out_dir, "_meta", pr["id"] + ".json"), *CONFIG_FLAGS[config], *(extra or [])]
     env = dict(os.environ)
     env.update({"MIN_SEVERITY_TO_COMMENT": "low", "MIN_CONFIDENCE": "0.0", "PYTHONIOENCODING": "utf-8"})
     t0 = time.time()
@@ -239,13 +244,24 @@ def main():
     ap.add_argument("--out", default="out", help="thư mục kết quả dưới eval/aacr/ (vd. out-claudecode); kèm LLM_PROFILE=<tên> để đổi model")
     ap.add_argument("--judge-tag", default="", help="chấm lại bằng giám khảo KHÁC model review (model hiện tại làm giám khảo): cache và results mang hậu tố này")
     ap.add_argument("--review-model", default="", help="tên model đã sinh finding, chỉ để ghi vào results khi giám khảo là model khác")
+    ap.add_argument("--repos", default="", help="chỉ chạy các repo này, vd infiniflow_ragflow (phân tách bằng dấu phẩy)")
+    ap.add_argument("--memory-chain", action="store_true",
+                    help="A/B memory: chạy PR của mỗi repo theo thứ tự số PR tăng dần; sau mỗi PR agent tự rút ghi chú "
+                         "(lớp 2) vào eval/aacr/<out>/memory/<repo>.json và PR sau nạp ghi chú đó (lớp 3). "
+                         "So với lần chạy không có cờ này trên cùng repo để đo memory bật/tắt")
     a = ap.parse_args()
     global OUT_NAME
     OUT_NAME = a.out
     steps = a.steps.split(",")
     configs = [c for c in a.configs.split(",") if c]
     prs = load_prs(a.lang, a.max_lines)
-    print(f"{len(prs)} PR {a.lang} (<= {a.max_lines} dòng), {sum(len(p['truth']) for p in prs.values())} vấn đề chuẩn", flush=True)
+    if a.repos:
+        want = {r.strip() for r in a.repos.split(",") if r.strip()}
+        prs = OrderedDict((k, v) for k, v in prs.items() if f"{v['owner']}_{v['repo']}" in want)
+    if a.memory_chain:   # chuỗi PR của một repo phải đi theo thời gian: số PR nhỏ trước
+        prs = OrderedDict(sorted(prs.items(), key=lambda kv: (kv[1]["owner"], kv[1]["repo"], kv[1]["number"])))
+    print(f"{len(prs)} PR {a.lang} (<= {a.max_lines} dòng), {sum(len(p['truth']) for p in prs.values())} vấn đề chuẩn"
+          + (" — memory-chain" if a.memory_chain else ""), flush=True)
 
     diffs = {}
     if "prepare" in steps or "run" in steps:
@@ -267,8 +283,14 @@ def main():
                     continue
                 # mỗi PR cần working tree ở đúng head của PR (context file đọc từ đó)
                 sh(["git", "-C", repo_dir(pr), "checkout", "-q", "-f", pr["head"]])
+                extra = []
+                if a.memory_chain:
+                    mf = memory_chain_file(pr)
+                    extra = ["--memory-file", mf, "--reflect-out", mf]
                 print(f"[{cfg}] {pr['id']} ...", flush=True)
-                rec = run_config(pr, cfg, diffs[pr["id"]])
+                rec = run_config(pr, cfg, diffs[pr["id"]], extra)
+                if a.memory_chain:
+                    rec["memory_file"] = memory_chain_file(pr)
                 print(f"    -> {'OK' if rec['returncode'] == 0 else 'LỖI'} {rec['seconds']}s tokens {rec['tokens_in']}/{rec['tokens_out']}", flush=True)
                 runs[pr["id"]] = rec
                 json.dump(list(runs.values()), open(runs_path, "w", encoding="utf-8"), ensure_ascii=False, indent=1)

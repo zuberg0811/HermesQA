@@ -38,7 +38,7 @@ def cmd_propose(a):
     if a.profile:
         settings.use_profile(a.profile)
     memory.init_db()
-    ev = learn_rules.collect_evidence(a.note or [])
+    ev = learn_rules.collect_evidence(a.note or [], a.evidence_file)
     docs = a.docs.split(",") if a.docs else sorted(ev)
     backend = get_backend()
     cand = Path(a.candidate_dir)
@@ -94,6 +94,8 @@ def main():
     p.add_argument("--docs", help="python.md,tests.md… (mặc định: mọi checklist có bằng chứng)")
     p.add_argument("--profile"); p.add_argument("--candidate-dir", default=str(DEFAULT_CANDIDATES))
     p.add_argument("--note", action="append", help="bằng chứng gõ tay, lặp lại được")
+    p.add_argument("--evidence-file", help="JSON [{repo, file, category, title, reason}] bằng chứng ngoài DB "
+                                           "(vd. eval/aacr_fp_judge.py --evidence-out)")
     g = sub.add_parser("gate"); g.set_defaults(fn=cmd_gate)
     g.add_argument("--doc", required=True); g.add_argument("--baseline", required=True)
     g.add_argument("--out", default=os.path.join("eval", "out-learned")); g.add_argument("--config", default="llm")

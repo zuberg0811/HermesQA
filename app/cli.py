@@ -50,6 +50,10 @@ def main():
     ap.add_argument("--no-runlog", action="store_true", help="không ghi nhật ký lần chạy (dashboard)")
     ap.add_argument("--profile", help="profile LLM khai báo trong .env (LLM_<TÊN>_MODEL...), VD: gemini | muse; "
                                       "mặc định: LLM_PROFILE hoặc LLM_BASE_URL/LLM_MODEL")
+    ap.add_argument("--memory-file", help="ghi chú repo (lớp 1-3 tự học) nạp từ FILE thay vì DB: JSON [{note, source, kind, "
+                                          "file, category}] hoặc .md mỗi dòng một ghi chú; chọn theo lô file như worker")
+    ap.add_argument("--reflect-out", help="sau review, agent tự rút ghi chú về repo (lớp 2) và NỐI vào file JSON này; "
+                                          "trỏ cùng file với --memory-file để mô phỏng chuỗi PR của một repo (A/B memory)")
     a = ap.parse_args()
 
     if a.profile:
@@ -107,11 +111,22 @@ def main():
     roles = [r for r in a.roles.split(",") if r.strip()] if a.roles is not None else select_roles(files, cfg.roles)
     mode = "off" if a.no_verify else (a.verify or settings.verify_mode)
 
+    # Memory từ file: không cần Postgres, nhưng chọn ghi chú theo lô file + vai y hệt worker (memory.rank_memory)
+    mem_rows: list[dict] = []
+    repo_memory = ""
+    if a.memory_file or a.reflect_out:
+        from app import memory   # import muộn: app.memory tạo engine SQLAlchemy, CLI thường không cần DB
+        if a.memory_file:
+            mem_rows = memory.load_memory_file(a.memory_file)
+            repo_memory = memory.memory_from_rows(mem_rows) if mem_rows else ""
+            log.info("memory: %d ghi chú từ %s", len(mem_rows), a.memory_file)
+
     res = LLMReview()
+    backend = get_backend() if roles else None
     if roles:
         for role in roles:
             print(f"[agent] {role} ...")
-        res = run_llm_review(get_backend(), roles, files, a.repo, pr_meta, static, cfg.conventions, "", mode, on_step=step)
+        res = run_llm_review(backend, roles, files, a.repo, pr_meta, static, cfg.conventions, repo_memory, mode, on_step=step)
         for role in res.failed_roles:
             print(f"[agent] {role} LỖI: {res.summaries.get(role)}")
 
@@ -121,6 +136,19 @@ def main():
     final = inline + overflow
     for f in final:
         f.fingerprint = postprocess.fingerprint(f)
+
+    # Lớp 2 ngoài DB: phản tư rồi nối ghi chú vào file (worker làm việc này qua reflect.learn -> repo_memory)
+    new_notes: list[dict] = []
+    if a.reflect_out and backend is not None and not res.failed_roles:
+        from app.review import reflect
+        step("reflect", "agent tự rút ghi chú về repo")
+        try:
+            new_notes = reflect.reflect(backend, pr_meta, final, res.removed, [r["note"] for r in mem_rows], cfg.conventions)
+            memory.append_memory_file(a.reflect_out, new_notes)
+            log.info("reflect: %d ghi chú mới -> %s", len(new_notes), a.reflect_out)
+        except Exception as e:   # như worker: học hỏi không được làm hỏng review
+            log.warning("reflect THAT BAI: %s", e)
+
     md = report.build_markdown(pr_meta, roles, res.summaries, final, settings.llm_model, tools,
                                skipped=res.skipped, removed=res.removed)
     open(a.out, "w", encoding="utf-8").write(md)
@@ -128,7 +156,8 @@ def main():
         json.dump([f.model_dump() for f in final], open(a.json, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
     if a.meta:
         os.makedirs(os.path.dirname(os.path.abspath(a.meta)), exist_ok=True)
-        json.dump({**res.meta(), "verify_mode": mode, "roles": roles}, open(a.meta, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+        json.dump({**res.meta(), "verify_mode": mode, "roles": roles, "memory_notes": len(mem_rows), "reflect_notes": new_notes},
+                  open(a.meta, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
     print(f"\n{len(final)} findings -> {a.out}")
     if ctx:
         ctx.finish(source=a.run_source, pr_meta=pr_meta, roles=roles, res=res, static=static, final=final,

@@ -61,9 +61,18 @@ def doc_for_file(path: str) -> str:
     return docs[0] if docs else rules.DEFAULT_RULE
 
 
-def collect_evidence(extra_notes: list[str] | None = None) -> dict[str, list[str]]:
-    """{doc: [dòng bằng chứng]} từ DB. extra_notes: dòng người gõ tay (--note), xếp vào default.md."""
+def collect_evidence(extra_notes: list[str] | None = None, evidence_file: str | None = None) -> dict[str, list[str]]:
+    """{doc: [dòng bằng chứng]} từ DB. extra_notes: dòng người gõ tay (--note), xếp vào default.md.
+    evidence_file: JSON [{repo, file, category, title, reason}] — finding bị bác bỏ ngoài DB (vd. giám khảo khác họ
+    chấm trên PR thật, eval/aacr_fp_judge.py); xếp theo checklist của file như bằng chứng từ DB."""
     ev: dict[str, list[str]] = {}
+    if evidence_file:
+        for e in json.load(open(evidence_file, encoding="utf-8")):
+            if not e.get("file"):
+                continue
+            line = (f"[{e.get('repo', '?')}] {e['file']} [{e.get('category') or '?'}] \"{e.get('title') or '?'}\" — "
+                    f"{e.get('reason') or 'bị bác bỏ'}")
+            ev.setdefault(doc_for_file(e["file"]), []).append(line)
     for fb in memory.feedback_profile_all():
         if fb.get("kind") != "reject" or not fb.get("file"):
             continue
