@@ -187,7 +187,7 @@ hai lần vì máy ngủ / phiên đóng; `run_eval.py` chạy tiếp từ case 
 |---|---|---|---|---|
 | Python · `static` | 67,7 | 74,2 | **76,2** (P 88,9 · R 66,7) | thêm 1 TP so với offline |
 | Python · `both` | 80,5 | 85,4 | **86,4** (P 77,8 · R 97,2) | FP 13 → 10, FN 3 → 1; 149 s/PR, 15,3k token/PR |
-| Python · `llm` | 79,5 | – | không chạy lại | |
+| Python · `llm` | 79,5 | – | **79,1** (P 68,0 · R 94,4), chạy 10/11 | TP 34, FP 16, FN 2; 43,5 s/PR, 17,1k token/PR — làm baseline cho cổng lớp 4 (mục 7.5) |
 | Đa ngôn ngữ · `both` | 69,6 | – | **85,7** (P 75,0 · R 100) | TP 16 → 18, FP 12 → 6, FN 2 → 0; 118 s/PR |
 | Đa ngôn ngữ · `llm` | 74,4 | – | không chạy lại | |
 
@@ -202,8 +202,13 @@ hình, cùng chiều, nên hai sửa coi như đã được xác nhận bằng l
 model** trên bộ lỗi tiêm: nguyên nhân là bộ đề (mỗi lỗi có bằng chứng rõ ngay trong diff), không phải model hay
 prompt. Giá trị của bước này chỉ đo được trên PR thật (`eval/aacr/`), nơi LLM hay "nhìn thấy" lỗi không có trong diff.
 
-Thư mục: `eval/out-claudecode-v2/` (`static`, `both`), `eval/out-multi-claudecode-v2/` (`both`). CI: từ 02/11 bộ test
+Thư mục: `eval/out-claudecode-v2/` (`static`, `both`, từ 10/11 thêm `llm`), `eval/out-multi-claudecode-v2/` (`both`). CI: từ 02/11 bộ test
 chạy tự động trên GitHub Actions (`.github/workflows/test.yml`), lần đầu xanh.
+
+**16 FP của Claude `llm` (10/11) là gì:** `eval/judge_fp.py` với giám khảo **khác họ** (Gemini 3.1 flash-lite, 3 phiếu) kết luận
+**16/16 đúng về code, 0 sai sự thật**: 5 là "thiếu test cho hàm/endpoint mới", còn lại là lỗi có thật ngoài lỗi được tiêm
+(subprocess không timeout, endpoint luôn trả 200, CMD dạng shell không nhận SIGTERM, `sudo` trong image slim…). Precision theo
+nhãn 68,0% là cận dưới; tính cả nhận xét đúng ngoài nhãn là 100%. Con số này quyết định cách làm mục 7.5.
 
 ## 7. PR thật (AACR-Bench, 15 PR Python) với Claude — 02/11/2026
 
@@ -281,3 +286,68 @@ Chạy `tools/learn_rules.py propose --docs python.md --profile claudecode`: Cla
 đều trên `examples/c8_demo*.py`) và **không đề xuất dòng nào** cho checklist. Đây là kết quả đúng: bằng chứng chỉ nói
 "thư mục examples/ là demo cố ý", không rút được luật chung cho mọi repo; đề xuất luật từ 5 phản hồi trên một thư mục
 demo sẽ là học thuộc đề. Bước gate (C10) vì thế chưa có ứng viên để chạy; cần phản hồi từ PR thật đa dạng hơn.
+
+### 7.4 A/B memory bật/tắt trên chuỗi PR cùng repo (C11) — 10/11/2026
+
+**Cách đo.** Worker nạp repo memory từ Postgres, còn CLI/eval trước đây không nạp gì, nên không đo được lớp 2–3 ngoài
+bot. Bổ sung `app.cli --memory-file` (ghi chú từ file JSON, chọn theo lô file + vai bằng đúng hàm `memory.rank_memory`
+của worker) và `--reflect-out` (sau review, agent tự rút ghi chú rồi nối vào file). `eval/aacr_eval.py --memory-chain
+--repos infiniflow_ragflow` chạy 4 PR ragflow của AACR theo thứ tự số PR tăng dần (5065 → 6553 → 6691 → 7151): PR sau
+nhận ghi chú agent rút từ PR trước. Đối chứng: cùng 4 PR, cùng model (`claude-opus-5-5`, `llm`), không memory, chạy lại
+cùng ngày (`out-claudecode-nomem`); thêm lần chạy gốc 02/11 (`out-claudecode`) để thấy dao động giữa hai lần chạy giống
+hệt nhau. Chấm bằng cả hai giám khảo (Gemini và Claude, 3 phiếu) và phân loại finding ngoài nhãn bằng Gemini
+(`eval/aacr_fp_judge.py`).
+
+| Arm (4 PR, 27 vấn đề chuẩn) | Finding | TP chặt · Gemini chấm | TP chặt · Claude chấm | P / R / F1 (Gemini) | Ngoài nhãn: đúng / sai | Token vào | Thời gian |
+|---|---|---|---|---|---|---|---|
+| Gốc 02/11, không memory | 17 | 6 | 5 | 35,3 / 22,2 / 27,3 | – | 194k | 608 s |
+| Chạy lại 10/11, không memory | 17 | 8 | 6 | 47,1 / 29,6 / 36,4 | 9 / 0 | 196k | 489 s |
+| **Có memory (chuỗi)** | 22 | **9** (lỏng 10) | **8** | 40,9 / 33,3 / 36,7 | 12 / 0 | 209k | 619 s |
+
+Ghi chú agent tự rút trong chuỗi (file `eval/aacr/out-claudecode-mem/memory/infiniflow_ragflow.json`), số ghi chú mỗi PR
+nhận được là 0 / 1 / 2 / 2:
+
+1. (sau 5065) `web/src/` dùng i18n cho chuỗi hiển thị; chuỗi UI hard-code là lệch quy ước — *convention*.
+2. (sau 6553) `api/db/services/` là dữ liệu đa tenant: truy vấn theo tên/id cần lọc thêm kb_id/tenant_id — *pattern*.
+3. (sau 7151) `rag/utils/infinity_conn.py` là một trong các backend doc store; sửa một backend nên soát các backend còn lại.
+4. (sau 7151) `infinity_conn.py` ghép filter thành chuỗi kiểu SQL, giá trị đưa vào cần escape dấu nháy đơn.
+
+**Đọc kết quả.** Có memory nhiều hơn 1–2 TP so với đối chứng cùng ngày, nhưng hai lần chạy *không memory* đã lệch nhau
+2 TP (6 so với 8), nên chênh lệch này nằm trong dao động của model; precision theo nhãn giảm vì có thêm 5 finding, song
+giám khảo khác họ không thấy finding nào sai ở cả hai arm. Quan trọng hơn: cả 4 ghi chú đều nói về thư mục mà PR *kế
+tiếp* không chạm tới (5065 sửa `web/src`, 6553 sửa `api/`, 6691 sửa `graphrag/`, 7151 sửa `rag/utils` + `graphrag/`), nên
+thí nghiệm này thực chất đo "ghi chú không liên quan có làm review xấu đi không" (không, theo số liệu) chứ chưa đo được
+lợi ích của memory. Muốn thấy lợi ích cần chuỗi PR dài hơn trong cùng một vùng code, hoặc ghi chú từ người (lớp 1) — chính
+là điều PR #1 (mục 7.3, `docs/THU_NGHIEM_PHAN_HOI_2026-11-02.md`) đã cho thấy trên repo demo. Cơ chế thì đã chạy trọn
+vòng ngoài DB: ghi chú đúng vùng code, đúng kiểu (convention/pattern), không có ghi chú tắt bảo mật.
+Chi phí memory: +6,7% token vào, +1 lần gọi LLM (reflect) mỗi PR.
+
+### 7.5 Cổng eval của lớp 4 chạy thật (C10) — 10/11/2026
+
+**Không có bằng chứng "bác bỏ" để đề xuất luật.** Thử ba nguồn: (a) 6 phản hồi thật trên PR #1 (mục 7.3); (b) 24 finding
+của Claude không khớp nhãn trên 15 PR thật AACR, cho Gemini chấm (`eval/aacr_fp_judge.py`): **23 đúng về code, 1 sai**
+(precision theo nhãn 42,9% → 97,6% nếu tính nhận xét đúng ngoài nhãn); (c) 16 FP của Claude `llm` trên bộ lỗi tiêm
+(mục 6): 16/16 đúng. Gộp (a)+(b) rồi (a)+(b)+(c nửa A) thành 6 và 12 bằng chứng cho `propose --evidence-file`: Claude
+**không đề xuất dòng nào** cả hai lần — đúng nguyên tắc "một loại nhận xét bị bác bỏ ≥ 2 lần", vì chỉ có đúng 1 nhận
+xét bị kết luận sai. Nói cách khác, trên dữ liệu hiện có, "báo động giả" của HermesQA hầu hết là nhận xét đúng nhưng
+ngoài phạm vi nhãn, không phải thứ lớp 4 được thiết kế để học.
+
+**Chạy cổng với ứng viên viết tay.** Để kiểm tra cổng bằng eval thật, viết tay một dòng "Không báo" kiểu mà người bảo trì
+dễ bị cám dỗ thêm, dựa trên mẫu lặp lại nhiều nhất trong 16 FP (5 lần "thiếu test"):
+`Thiếu unit test cho hàm hoặc endpoint mới khi PR không chạm thư mục tests/`. Tách đôi bộ lỗi tiêm xen kẽ theo thứ tự
+case (nửa A 18 case lấy bằng chứng, nửa B 17 case chấm cổng, cân bằng theo loại lỗi) để không học thuộc đề; `gate --cases
+<nửa B>` chấm baseline mục 6 trên cùng 17 case (bổ sung tham số `cases` cho `learn_rules.metrics`).
+
+```
+python tools/learn_rules.py gate --doc python.md --baseline eval/out-claudecode-v2 --out eval/out-learned \
+    --config llm --profile claudecode --cases <17 case nửa B>
+KHÔNG ĐẠT  precision 61.5% -> 58.3% (-3.2%), recall 94.1% -> 82.4% (-11.8%), F1 74.4% -> 68.3%
+giữ nguyên checklist; ứng viên vẫn ở data/rules_candidates/python.md để xem tay
+```
+
+Overlay làm đúng điều nó hứa: finding loại `test` trong nửa B giảm 4 → 1, nhưng trong đó có TP duy nhất của case
+`new-func-no-test` (lỗi tiêm chính là "thiếu test") → thành FN; `string-concat-loop` và `cmd-os-system` bớt FP "thiếu
+test". Case `docker-apt-no-clean` mất TP là dao động của model (Dockerfile không dùng `python.md`). Kết luận: **cổng từ
+chối đúng** một luật giảm nhiễu nhưng làm mất recall; thư mục `app/skills/rules/learned/` vẫn trống, checklist không đổi.
+Chi phí một lần gate trên 17 case: ~13 phút Claude. Điểm yếu thật của lớp 4 lộ ra không phải ở cổng mà ở nguồn bằng
+chứng: sau 4 lần thử chưa có mẫu "bị bác bỏ lặp lại" nào ngoài thư mục demo; cần người dùng thật 👎 trên nhiều repo.
