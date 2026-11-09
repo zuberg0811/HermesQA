@@ -157,12 +157,18 @@ def write_candidate(doc: str, new_lines: list[str], candidate_dir: Path, learned
 
 # ---------- 4. cổng ----------
 
-def metrics(out_dir: str, config: str, truth: str = os.path.join("eval", "ground_truth.json"), tol: int = 3) -> dict:
-    """precision/recall/f1/tp/fp/fn của một thư mục eval, qua eval/score.py."""
+def metrics(out_dir: str, config: str, truth: str = os.path.join("eval", "ground_truth.json"), tol: int = 3,
+            cases: str | None = None) -> dict:
+    """precision/recall/f1/tp/fp/fn của một thư mục eval, qua eval/score.py.
+    cases: "a,b,c" chỉ chấm các case này — để tách đôi bộ eval: bằng chứng lấy từ nửa A, cổng chấm trên nửa B
+    (baseline đủ 35 case vẫn so được với lần chạy ứng viên chỉ trên nửa B)."""
     sys.path.insert(0, "eval")
     import score  # noqa: E402
     with open(truth, encoding="utf-8") as f:
         gt = json.load(f)
+    if cases:
+        want = {c.strip() for c in cases.split(",") if c.strip()}
+        gt = {**gt, "cases": {k: v for k, v in gt["cases"].items() if k in want}}
     s = score.score_dir(gt, out_dir, tol, [config])["configs"][config]
     return {k: s[k] for k in ("cases", "tp", "fp", "fn", "precision", "recall", "f1")}
 

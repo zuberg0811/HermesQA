@@ -144,3 +144,23 @@ def test_metrics_reads_real_eval_dir_if_present():
         pytest.skip("không có kết quả eval cục bộ")
     m = learn_rules.metrics(os.path.join("eval", "out-v3-rescored"), "llm")
     assert set(m) == {"cases", "tp", "fp", "fn", "precision", "recall", "f1"} and 0 <= m["precision"] <= 1
+
+
+def test_metrics_can_restrict_to_a_subset_of_cases(tmp_path):
+    """Tách đôi bộ eval: baseline đủ case vẫn so được với ứng viên chỉ chạy trên nửa B."""
+    import json
+    truth = {"repo": ".", "cases": {
+        "a": {"branch": "a", "truth": [{"file": "x.py", "line": 1, "categories": ["bug"]}]},
+        "b": {"branch": "b", "truth": [{"file": "y.py", "line": 1, "categories": ["bug"]}]},
+    }}
+    tp = tmp_path / "truth.json"
+    tp.write_text(json.dumps(truth), encoding="utf-8")
+    out = tmp_path / "out" / "llm"
+    out.mkdir(parents=True)
+    (out / "a.json").write_text(json.dumps([{"file": "x.py", "line": 1, "category": "bug", "source": "llm"},
+                                             {"file": "x.py", "line": 9, "category": "bug", "source": "llm"}]), encoding="utf-8")
+    (out / "b.json").write_text(json.dumps([{"file": "y.py", "line": 1, "category": "bug", "source": "llm"}]), encoding="utf-8")
+    full = learn_rules.metrics(str(tmp_path / "out"), "llm", str(tp))
+    assert (full["cases"], full["tp"], full["fp"]) == (2, 2, 1)
+    half = learn_rules.metrics(str(tmp_path / "out"), "llm", str(tp), cases="b")
+    assert (half["cases"], half["tp"], half["fp"], half["precision"]) == (1, 1, 0, 1.0)

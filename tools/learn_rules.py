@@ -64,12 +64,12 @@ def cmd_gate(a):
     current = set(rules.read_learned(a.doc).splitlines())
     new_lines = [l.lstrip("- ").strip() for l in (cand / a.doc).read_text(encoding="utf-8").splitlines()
                  if l.strip() and l not in current]
-    before = learn_rules.metrics(a.baseline, a.config, a.truth)
+    before = learn_rules.metrics(a.baseline, a.config, a.truth, cases=a.cases)
     if not a.skip_eval:
         rc = learn_rules.run_candidate_eval(cand, a.out, a.config, a.profile, a.limit, a.cases)
         if rc != 0:
             sys.exit(f"run_eval thất bại (rc={rc}); không promote")
-    after = learn_rules.metrics(a.out, a.config, a.truth)
+    after = learn_rules.metrics(a.out, a.config, a.truth, cases=a.cases)
     ok, why = learn_rules.gate(before, after, a.max_recall_drop, a.min_precision_gain)
     print(("ĐẠT  " if ok else "KHÔNG ĐẠT  ") + why)
     if ok:
